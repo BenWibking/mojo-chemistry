@@ -47,16 +47,21 @@ the accuracy and performance measurements.
 Pure-CUDA port of the Hopper structured kernel:
 
 ```bash
-python3 tools/slice_dag.py
+python3 tools/slice_dag.py reproducer.mojo --output-dir generated \
+  --threshold 1400 --shared-region-definitions 416 \
+  --shared-wave-warps 8
 nvcc -x cu -std=c++20 -O3 -arch=sm_90 --expt-relaxed-constexpr --fmad=false --maxrregcount=255 -DPRIMORDIAL_ROS2S_ENABLE_CUDA -DPRIMORDIAL_ROS2S_CUDA_STRUCTURED -DPRIMORDIAL_ROS2S_CUDA_THREADS_PER_BLOCK=128 -I. reproducer.cpp -o reproducer_cuda_structured
 ```
 
 This variant preserves the Mojo structured kernel's 32-cell, 256-thread CTA,
-two-wave chemistry DAG, shared-memory staging, four 8-lane LU groups per
-warp, and tile-wide adaptive controller. It uses 230,576 bytes of dynamic
-shared memory and therefore targets Hopper-class GPUs with the 227 KiB
-opt-in shared-memory configuration. Output identifies the policy as
-`gridwide-structured-cta32`.
+shared-memory staging, four 8-lane LU groups per warp, and tile-wide adaptive
+controller. The tuned generator settings dispatch all eight chemistry slices
+in one wave, bound generated live ranges with no-inline regions, and omit the
+serialized exchange producer. The resulting kernel uses 139,696 bytes of
+dynamic shared memory and targets Hopper-class GPUs. Output identifies the
+policy as `gridwide-structured-cta32`. See
+[`CUDA_STRUCTURED_GEAK_OPTIMIZATION_RESULTS.md`](CUDA_STRUCTURED_GEAK_OPTIMIZATION_RESULTS.md)
+for correctness, resource, and performance measurements.
 
 HIP build with the default project settings:
 

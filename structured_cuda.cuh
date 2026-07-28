@@ -53,10 +53,18 @@ inline constexpr int kLuGroupWidth = 8;
 inline constexpr int kMatrixValues = kEquations * kEquations;
 inline constexpr int kScratchSlots = structured_cuda_base::kScratchSlots;
 inline constexpr int kExchangeSlots = structured_cuda_base::kExchangeSlots;
+// Standard C++ does not permit a zero-length member array. The tuned schedule
+// specializes all exchange accesses away, so this is only an addressable dummy.
+inline constexpr int kExchangeStorageSlots =
+    kExchangeSlots == 0 ? 1 : kExchangeSlots;
 
 static_assert(kEquations == 15);
 static_assert(kScratchSlots >= structured_cuda_rhs::kScratchSlots);
 static_assert(kExchangeSlots >= structured_cuda_rhs::kExchangeSlots);
+static_assert(structured_cuda_base::kConcurrentWarps ==
+              structured_cuda_rhs::kConcurrentWarps);
+static_assert(structured_cuda_base::kConcurrentWarps == 3 ||
+              structured_cuda_base::kConcurrentWarps == kDagWarps);
 static_assert(kDagWarps * kLuGroupsPerWarp == kTileCells);
 static_assert(kLuGroupsPerWarp * kLuGroupWidth == 32);
 
@@ -65,7 +73,7 @@ struct alignas(16) SharedStorage {
     double scratch[kTileCells * kScratchSlots];
     double rhs[kTileCells * kEquations];
     double dag_inputs[kTileCells * kEquations];
-    double exchange[kTileCells * kExchangeSlots];
+    double exchange[kTileCells * kExchangeStorageSlots];
     double base[kTileCells * kEquations];
     double candidate[kTileCells * kEquations];
     double stage_y[kTileCells * kEquations];
@@ -177,7 +185,7 @@ __device__ __forceinline__ void dispatch_rhs_slice(
         structured_cuda_rhs::rhs_specie_slice_6_shared(
             inputs, outputs, exchange, scratch, cell, z);
         structured_cuda_rhs::rhs_eint_slice_6_shared(
-            inputs, outputs, scratch, cell, z);
+            inputs, outputs, exchange, scratch, cell, z);
         break;
     default:
         structured_cuda_rhs::rhs_specie_slice_7_shared(
@@ -187,20 +195,27 @@ __device__ __forceinline__ void dispatch_rhs_slice(
 }
 
 __device__ __forceinline__ void prepare_dag_inputs(
-    const double* base, double* inputs, int tid, int active_cells) {
-    if (tid < active_cells) {
+    const double* base, double* inputs, int cell, int local_lane,
+    int active_cells) {
+    if (cell < active_cells) {
+        for (int species = local_lane; species < kNumSpecies;
+             species += kLuGroupWidth) {
+            inputs[cell * kEquations + species] =
+                fmax(base[cell * kEquations + species],
+                     pc::small_number_density_floor());
+        }
+    }
+    __syncwarp();
+    if (cell < active_cells && local_lane == 0) {
         double rhotot = 0.0;
         for (int species = 0; species < kNumSpecies; ++species) {
-            const double value =
-                fmax(base[tid * kEquations + species],
-                     pc::small_number_density_floor());
-            inputs[tid * kEquations + species] = value;
+            const double value = inputs[cell * kEquations + species];
             rhotot += structured_mul(value, pc::species_mass(species));
         }
         double sum_abarinv = 0.0;
         double sum_gammasinv = 0.0;
         for (int species = 0; species < kNumSpecies; ++species) {
-            const double value = inputs[tid * kEquations + species];
+            const double value = inputs[cell * kEquations + species];
             sum_abarinv += value;
             sum_gammasinv += structured_mul(
                 structured_mul(value, pc::constants::m_p) / rhotot,
@@ -208,8 +223,8 @@ __device__ __forceinline__ void prepare_dag_inputs(
         }
         sum_abarinv *= pc::constants::m_p / rhotot;
         sum_gammasinv /= sum_abarinv;
-        const double energy = base[tid * kEquations + kEnergy];
-        inputs[tid * kEquations + kEnergy] = energy /
+        const double energy = base[cell * kEquations + kEnergy];
+        inputs[cell * kEquations + kEnergy] = energy /
             structured_mul(
                 structured_mul(sum_gammasinv,
                                pc::constants::n_A * pc::constants::k_B),
@@ -222,21 +237,33 @@ __device__ __forceinline__ void evaluate_base(
     SharedStorage& shared, int physical_warp, int physical_lane,
     int active_cells) {
     constexpr double z = pc::default_redshift;
-    if (physical_warp == 0 && physical_lane < active_cells) {
-        structured_cuda_base::base_exchange_shared(
-            shared.dag_inputs, shared.exchange, shared.scratch, physical_lane, z);
+    if constexpr (structured_cuda_base::kExchangeSlots > 0) {
+        if (physical_warp == 0 && physical_lane < active_cells) {
+            structured_cuda_base::base_exchange_shared(
+                shared.dag_inputs, shared.exchange, shared.scratch, physical_lane,
+                z);
+        }
+        __syncthreads();
     }
-    __syncthreads();
-    if (physical_warp < 3 && physical_lane < active_cells) {
-        dispatch_base_slice(first_wave_logical_warp(physical_warp),
-                            shared.dag_inputs, shared.jacobian, shared.rhs,
-                            shared.exchange, shared.scratch, physical_lane, z);
-    }
-    __syncthreads();
-    if (physical_warp < 5 && physical_lane < active_cells) {
-        dispatch_base_slice(second_wave_logical_warp(physical_warp),
-                            shared.dag_inputs, shared.jacobian, shared.rhs,
-                            shared.exchange, shared.scratch, physical_lane, z);
+    if constexpr (structured_cuda_base::kConcurrentWarps == kDagWarps) {
+        // The tuned schedule gives each physical warp exactly one DAG slice.
+        if (physical_lane < active_cells) {
+            dispatch_base_slice(physical_warp, shared.dag_inputs,
+                                shared.jacobian, shared.rhs, shared.exchange,
+                                shared.scratch, physical_lane, z);
+        }
+    } else {
+        if (physical_warp < 3 && physical_lane < active_cells) {
+            dispatch_base_slice(first_wave_logical_warp(physical_warp),
+                                shared.dag_inputs, shared.jacobian, shared.rhs,
+                                shared.exchange, shared.scratch, physical_lane, z);
+        }
+        __syncthreads();
+        if (physical_warp < 5 && physical_lane < active_cells) {
+            dispatch_base_slice(second_wave_logical_warp(physical_warp),
+                                shared.dag_inputs, shared.jacobian, shared.rhs,
+                                shared.exchange, shared.scratch, physical_lane, z);
+        }
     }
     __syncthreads();
 }
@@ -245,21 +272,31 @@ __device__ __forceinline__ void evaluate_rhs(
     SharedStorage& shared, int physical_warp, int physical_lane,
     int active_cells) {
     constexpr double z = pc::default_redshift;
-    if (physical_warp == 0 && physical_lane < active_cells) {
-        structured_cuda_rhs::rhs_specie_exchange_shared(
-            shared.dag_inputs, shared.exchange, shared.scratch, physical_lane, z);
+    if constexpr (structured_cuda_rhs::kExchangeSlots > 0) {
+        if (physical_warp == 0 && physical_lane < active_cells) {
+            structured_cuda_rhs::rhs_specie_exchange_shared(
+                shared.dag_inputs, shared.exchange, shared.scratch, physical_lane,
+                z);
+        }
+        __syncthreads();
     }
-    __syncthreads();
-    if (physical_warp < 3 && physical_lane < active_cells) {
-        dispatch_rhs_slice(first_wave_logical_warp(physical_warp),
-                           shared.dag_inputs, shared.rhs, shared.exchange,
-                           shared.scratch, physical_lane, z);
-    }
-    __syncthreads();
-    if (physical_warp < 5 && physical_lane < active_cells) {
-        dispatch_rhs_slice(second_wave_logical_warp(physical_warp),
-                           shared.dag_inputs, shared.rhs, shared.exchange,
-                           shared.scratch, physical_lane, z);
+    if constexpr (structured_cuda_rhs::kConcurrentWarps == kDagWarps) {
+        if (physical_lane < active_cells) {
+            dispatch_rhs_slice(physical_warp, shared.dag_inputs, shared.rhs,
+                               shared.exchange, shared.scratch, physical_lane, z);
+        }
+    } else {
+        if (physical_warp < 3 && physical_lane < active_cells) {
+            dispatch_rhs_slice(first_wave_logical_warp(physical_warp),
+                               shared.dag_inputs, shared.rhs, shared.exchange,
+                               shared.scratch, physical_lane, z);
+        }
+        __syncthreads();
+        if (physical_warp < 5 && physical_lane < active_cells) {
+            dispatch_rhs_slice(second_wave_logical_warp(physical_warp),
+                               shared.dag_inputs, shared.rhs, shared.exchange,
+                               shared.scratch, physical_lane, z);
+        }
     }
     __syncthreads();
 }
@@ -272,21 +309,37 @@ __device__ __forceinline__ void factorize_shared(
     }
     __syncwarp();
     for (int k = 0; k < kEquations - 1; ++k) {
-        if (participating && local_lane == k % kLuGroupWidth) {
-            int pivot = k;
-            double maximum = fabs(jacobian[cell * kMatrixValues + k * kEquations + k]);
-            for (int row = k + 1; row < kEquations; ++row) {
-                const double value =
-                    fabs(jacobian[cell * kMatrixValues + row * kEquations + k]);
+        int pivot = k;
+        double maximum = -1.0;
+        if (participating) {
+            for (int row = k + local_lane; row < kEquations;
+                 row += kLuGroupWidth) {
+                const double value = fabs(
+                    jacobian[cell * kMatrixValues + row * kEquations + k]);
                 if (value > maximum) {
                     maximum = value;
                     pivot = row;
                 }
             }
+        }
+        const int group_base = (threadIdx.x & 31) - local_lane;
+        const unsigned int group_mask = 0xffU << group_base;
+        // Prefer the lowest row on ties to preserve the serial pivot policy.
+        for (int offset = kLuGroupWidth / 2; offset > 0; offset /= 2) {
+            const double other_maximum =
+                __shfl_down_sync(group_mask, maximum, offset, kLuGroupWidth);
+            const int other_pivot =
+                __shfl_down_sync(group_mask, pivot, offset, kLuGroupWidth);
+            if (other_maximum > maximum ||
+                (other_maximum == maximum && other_pivot < pivot)) {
+                maximum = other_maximum;
+                pivot = other_pivot;
+            }
+        }
+        if (participating && local_lane == 0) {
             pivots[cell * kEquations + k] = pivot;
         }
         __syncwarp();
-        int pivot = k;
         if (participating) {
             pivot = pivots[cell * kEquations + k];
             for (int column = local_lane; column < kEquations;
@@ -452,18 +505,18 @@ void advance_collapse_gridwide_structured_kernel(
     }
     __syncthreads();
 
-    if (tid == 0) {
-        int count = 0;
-        for (int cell = 0; cell < active_cells; ++cell) {
-            if (shared.participants[cell] > 0) {
-                ++count;
-            }
+    if (physical_warp == 0) {
+        const unsigned int participant_mask = __ballot_sync(
+            0xffffffffU,
+            physical_lane < active_cells &&
+                shared.participants[physical_lane] > 0);
+        if (physical_lane == 0) {
+            shared.control_i32[0] = __popc(participant_mask);
+            shared.control_i32[2] = 0;
+            shared.control_i32[3] = 0;
+            shared.control_f64[1] = 0.0;
+            shared.control_f64[2] = 1.0;
         }
-        shared.control_i32[0] = count;
-        shared.control_i32[2] = 0;
-        shared.control_i32[3] = 0;
-        shared.control_f64[1] = 0.0;
-        shared.control_f64[2] = 1.0;
     }
     __syncthreads();
 
@@ -526,7 +579,8 @@ void advance_collapse_gridwide_structured_kernel(
         __syncthreads();
 
         const bool reuse_jacobian = jacobian_valid;
-        prepare_dag_inputs(shared.base, shared.dag_inputs, tid, active_cells);
+        prepare_dag_inputs(shared.base, shared.dag_inputs, warp_cell, local_lane,
+                           active_cells);
         if (reuse_jacobian) {
             evaluate_rhs(shared, physical_warp, physical_lane, active_cells);
         } else {
@@ -564,11 +618,13 @@ void advance_collapse_gridwide_structured_kernel(
         factorize_shared(shared.jacobian, participating, warp_cell, local_lane,
                          shared.pivots, shared.infos);
         __syncthreads();
-        if (tid == 0) {
-            for (int owner = 0; owner < active_cells; ++owner) {
-                if (shared.infos[owner] != 0) {
-                    shared.control_i32[1] = 1;
-                }
+        if (physical_warp == 0) {
+            const unsigned int singular_mask = __ballot_sync(
+                0xffffffffU,
+                physical_lane < active_cells &&
+                    shared.infos[physical_lane] != 0);
+            if (physical_lane == 0) {
+                shared.control_i32[1] = singular_mask != 0;
             }
         }
         __syncthreads();
@@ -587,7 +643,8 @@ void advance_collapse_gridwide_structured_kernel(
         }
         __syncthreads();
 
-        prepare_dag_inputs(shared.stage_y, shared.dag_inputs, tid, active_cells);
+        prepare_dag_inputs(shared.stage_y, shared.dag_inputs, warp_cell,
+                           local_lane, active_cells);
         evaluate_rhs(shared, physical_warp, physical_lane, active_cells);
         if (participating) {
             for (int component = local_lane; component < kEquations;
@@ -616,7 +673,8 @@ void advance_collapse_gridwide_structured_kernel(
         }
         __syncthreads();
 
-        prepare_dag_inputs(shared.stage_y, shared.dag_inputs, tid, active_cells);
+        prepare_dag_inputs(shared.stage_y, shared.dag_inputs, warp_cell,
+                           local_lane, active_cells);
         evaluate_rhs(shared, physical_warp, physical_lane, active_cells);
         if (participating) {
             for (int component = local_lane; component < kEquations;
@@ -675,18 +733,23 @@ void advance_collapse_gridwide_structured_kernel(
             continue;
         }
 
-        if (tid == 0) {
+        if (physical_warp == 0) {
             double tile_error = 0.0;
-            for (int cell = 0; cell < active_cells; ++cell) {
-                if (shared.participants[cell] > 0) {
-                    double error = shared.trial_errors[cell];
-                    if (!isfinite(error)) {
-                        error = std::numeric_limits<double>::max();
-                    }
-                    tile_error = fmax(tile_error, error);
+            if (physical_lane < active_cells &&
+                shared.participants[physical_lane] > 0) {
+                tile_error = shared.trial_errors[physical_lane];
+                if (!isfinite(tile_error)) {
+                    tile_error = std::numeric_limits<double>::max();
                 }
             }
-            shared.control_f64[0] = tile_error;
+            for (int offset = 16; offset > 0; offset /= 2) {
+                tile_error = fmax(
+                    tile_error,
+                    __shfl_down_sync(0xffffffffU, tile_error, offset));
+            }
+            if (physical_lane == 0) {
+                shared.control_f64[0] = tile_error;
+            }
         }
         __syncthreads();
         const double err_tile = shared.control_f64[0];
@@ -707,10 +770,11 @@ void advance_collapse_gridwide_structured_kernel(
                              safe));
                 hnew = h / fmax(fac_step, facgus);
             }
-            if (tid < active_cells && shared.participants[tid] > 0) {
-                for (int component = 0; component < kEquations; ++component) {
-                    shared.base[tid * kEquations + component] =
-                        shared.candidate[tid * kEquations + component];
+            if (participating) {
+                for (int component = local_lane; component < kEquations;
+                     component += kLuGroupWidth) {
+                    shared.base[warp_cell * kEquations + component] =
+                        shared.candidate[warp_cell * kEquations + component];
                 }
             }
             __syncthreads();

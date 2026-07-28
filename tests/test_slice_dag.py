@@ -149,6 +149,7 @@ class SliceDagGenerationTests(unittest.TestCase):
             self.assertIn("namespace structured_cuda_base", cuda_base)
             self.assertIn("base_exchange_shared", cuda_base)
             self.assertIn("structured_mul", cuda_base)
+            self.assertIn("inline constexpr int kConcurrentWarps = 3;", cuda_base)
             self.assertIn("namespace structured_cuda_rhs", cuda_rhs)
             self.assertIn("rhs_specie_exchange_shared", cuda_rhs)
             self.assertNotIn(" if ", cuda_base)
@@ -173,6 +174,41 @@ class SliceDagGenerationTests(unittest.TestCase):
             self.assertEqual(
                 report["shared_scratch"]["rhs"]["scratch_slots"], 108
             )
+            cuda_base = (Path(output) / "slices_base_shared.cuh").read_text()
+            self.assertIn("__device__ __noinline__ void _base_slice_", cuda_base)
+
+    def test_tuned_cuda_schedule_keeps_uniform_empty_exchange_signatures(self):
+        with tempfile.TemporaryDirectory() as output:
+            report = slice_dag.generate(
+                ROOT / "reproducer.mojo",
+                Path(output),
+                threshold=1400,
+                shared_region_definitions=416,
+                shared_wave_warps=8,
+            )
+            base = report["shared_scratch"]["base"]
+            rhs = report["shared_scratch"]["rhs"]
+            self.assertEqual(base["scratch_slots"], 190)
+            self.assertEqual(rhs["scratch_slots"], 0)
+            self.assertEqual(base["exchange_slots"], 0)
+            self.assertEqual(rhs["exchange_slots"], 0)
+            self.assertEqual(base["concurrent_warps"], 8)
+            self.assertEqual(rhs["concurrent_warps"], 8)
+            mojo_base = (Path(output) / "slices_base_shared.mojo").read_text()
+            cuda_base = (Path(output) / "slices_base_shared.cuh").read_text()
+            self.assertIn("def base_exchange_shared(", mojo_base)
+            self.assertIn("exchange: SharedPointer", mojo_base)
+            self.assertIn("    pass", mojo_base)
+            self.assertNotIn(
+                "def base_exchange_shared(\n"
+                "    inputs: SharedPointer, exchange: SharedPointer, \n"
+                "    scratch: SharedPointer, cell: Int, z: Float64):\n"
+                "    var T",
+                mojo_base,
+            )
+            self.assertIn("base_exchange_shared", cuda_base)
+            self.assertIn("double* __restrict__ exchange", cuda_base)
+            self.assertIn("inline constexpr int kConcurrentWarps = 8;", cuda_base)
 
     def test_shared_warp_order_must_be_a_permutation(self):
         with tempfile.TemporaryDirectory() as output:

@@ -834,14 +834,9 @@ def emit_shared_function(
         lines = [
             "@no_inline",
             f"def {helper_name}(inputs: SharedPointer, {output_arguments}",
+            "    exchange: SharedPointer, scratch: SharedPointer, ",
+            "    cell: Int, z: Float64):",
         ]
-        if exchange_slots:
-            lines.append(
-                "    exchange: SharedPointer, scratch: SharedPointer, "
-                "cell: Int, z: Float64):"
-            )
-        else:
-            lines.append("    scratch: SharedPointer, cell: Int, z: Float64):")
         region_text = "\n".join(
             definition.statement.text
             for definition in schedule.ordered[start : end + 1]
@@ -905,8 +900,7 @@ def emit_shared_function(
         signature += "jacobian: SharedPointer, rhs: SharedPointer, "
     else:
         signature += "outputs: SharedPointer, "
-    if exchange_slots:
-        signature += "exchange: SharedPointer, "
+    signature += "exchange: SharedPointer, "
     signature += "scratch: SharedPointer, cell: Int, z: Float64):"
     wrapper = [signature]
     empty_locals: set[str] = set()
@@ -918,8 +912,7 @@ def emit_shared_function(
             "inputs, "
         )
         call += "jacobian, rhs, " if dag.name == "base" else "outputs, "
-        if exchange_slots:
-            call += "exchange, "
+        call += "exchange, "
         wrapper.append(call + "scratch, cell, z)")
     if len(wrapper) == 1:
         wrapper.append("    pass")
@@ -944,8 +937,7 @@ def emit_lifetime_shared_function(
         signature += "jacobian: SharedPointer, rhs: SharedPointer, "
     else:
         signature += "outputs: SharedPointer, "
-    if exchange_slots:
-        signature += "exchange: SharedPointer, "
+    signature += "exchange: SharedPointer, "
     signature += "scratch: SharedPointer, cell: Int, z: Float64):"
     lines = [signature, "    var T = inputs[cell * 15 + 14]"]
     for output in schedule.outputs_after.get(-1, []):
@@ -1023,8 +1015,11 @@ def emit_exchange_producer(
         f"def {dag.name}_exchange_shared(",
         "    inputs: SharedPointer, exchange: SharedPointer, ",
         "    scratch: SharedPointer, cell: Int, z: Float64):",
-        "    var T = inputs[cell * 15 + 14]",
     ]
+    if not schedule.ordered:
+        lines.append("    pass")
+        return "\n".join(lines), schedule
+    lines.append("    var T = inputs[cell * 15 + 14]")
     for index, definition in enumerate(schedule.ordered):
         match = DEF_RE.match(definition.statement.text.strip())
         if match is None:
@@ -1133,8 +1128,6 @@ def emit_shared_file(
     producer_reports: list[dict[str, object]] = []
     producer_peak_slots = 0
     for dag, exchange_map in zip(dags, exchange_maps):
-        if not exchange_map:
-            continue
         function, schedule = emit_exchange_producer(dag, exchange_map)
         producer_functions.append(function)
         producer_peak_slots = max(producer_peak_slots, schedule.peak_slots)
@@ -1162,6 +1155,7 @@ def emit_shared_file(
         "]\n"
         f"comptime ScratchSlots = {scratch_slots}\n\n"
         f"comptime ExchangeSlots = {next_exchange_slot}\n\n"
+        f"comptime ConcurrentWarps = {concurrent_warps}\n\n"
     )
     functions = producer_functions
     for dag_index, (dag, dag_partition, exchange_map) in enumerate(
@@ -1295,10 +1289,13 @@ def emit_cuda_shared_header(
     source_lines = mojo_path.read_text().splitlines()
     constants: dict[str, int] = {}
     for line in source_lines:
-        match = re.match(r"^comptime (ScratchSlots|ExchangeSlots) = (\d+)$", line)
+        match = re.match(
+            r"^comptime (ScratchSlots|ExchangeSlots|ConcurrentWarps) = (\d+)$",
+            line,
+        )
         if match:
             constants[match.group(1)] = int(match.group(2))
-    if set(constants) != {"ScratchSlots", "ExchangeSlots"}:
+    if set(constants) != {"ScratchSlots", "ExchangeSlots", "ConcurrentWarps"}:
         raise DagError(f"missing shared constants in {mojo_path}")
 
     output = [
@@ -1308,6 +1305,7 @@ def emit_cuda_shared_header(
         f"namespace {namespace} {{",
         f"inline constexpr int kScratchSlots = {constants['ScratchSlots']};",
         f"inline constexpr int kExchangeSlots = {constants['ExchangeSlots']};",
+        f"inline constexpr int kConcurrentWarps = {constants['ConcurrentWarps']};",
         "",
     ]
     index = 0
@@ -1317,6 +1315,9 @@ def emit_cuda_shared_header(
         if not line.startswith("def "):
             index += 1
             continue
+        no_inline = (
+            index > 0 and source_lines[index - 1].strip() == "@no_inline"
+        )
         header = line.strip()
         while not header.endswith("):"):
             index += 1
@@ -1338,8 +1339,9 @@ def emit_cuda_shared_header(
                 arguments.append("const double* __restrict__ inputs")
             else:
                 arguments.append(f"double* __restrict__ {argument}")
+        function_attribute = "__noinline__" if no_inline else "__forceinline__"
         output.append(
-            "__device__ __forceinline__ void "
+            f"__device__ {function_attribute} void "
             f"{function_name}({', '.join(arguments)}) {{"
         )
         index += 1

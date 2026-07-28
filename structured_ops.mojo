@@ -266,7 +266,7 @@ def dispatch_rhs_slice_shared(
         rhs_specie_slice_5_shared(inputs, outputs, exchange, scratch, cell, z)
     elif warp_id == 6:
         rhs_specie_slice_6_shared(inputs, outputs, exchange, scratch, cell, z)
-        rhs_eint_slice_6_shared(inputs, outputs, scratch, cell, z)
+        rhs_eint_slice_6_shared(inputs, outputs, exchange, scratch, cell, z)
     else:
         rhs_specie_slice_7_shared(inputs, outputs, exchange, scratch, cell, z)
 
