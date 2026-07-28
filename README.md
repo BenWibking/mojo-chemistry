@@ -30,11 +30,19 @@ Mojo CPU build:
 pixi run mojo build reproducer.mojo -o reproducer_mojo -Xlinker -lm
 ```
 
-CUDA build with the default project settings:
+Optimized CUDA build:
 
 ```bash
-nvcc -x cu -std=c++20 -O3 -arch=sm_90 --expt-relaxed-constexpr --fmad=false --maxrregcount=255 -DPRIMORDIAL_ROS2S_ENABLE_CUDA -DPRIMORDIAL_ROS2S_CUDA_THREADS_PER_BLOCK=128 -I. reproducer.cpp -o reproducer_cuda
+nvcc -x cu -std=c++20 -O3 -arch=sm_90 --expt-relaxed-constexpr --fmad=true --maxrregcount=255 -DPRIMORDIAL_ROS2S_ENABLE_CUDA -DPRIMORDIAL_ROS2S_CUDA_THREADS_PER_BLOCK=128 -I. reproducer.cpp -o reproducer_cuda
 ```
+
+This performance build permits fused multiply-add contraction. For a strict
+regression build that preserves the original CUDA arithmetic trajectory, use
+the same command with `--fmad=false`. The strict build is bitwise identical to
+the original grid-4 and grid-64 CUDA references; the performance build passes
+the existing cross-implementation comparator. See
+[`CUDA_GEAK_OPTIMIZATION_RESULTS.md`](CUDA_GEAK_OPTIMIZATION_RESULTS.md) for
+the accuracy and performance measurements.
 
 Pure-CUDA port of the Hopper structured kernel:
 

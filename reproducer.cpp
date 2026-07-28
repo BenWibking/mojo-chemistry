@@ -20,6 +20,16 @@
 #endif
 #endif
 
+#ifndef INTEGRATORS_HOST_DEVICE_NOINLINE
+#if defined(__CUDACC__)
+#define INTEGRATORS_HOST_DEVICE_NOINLINE __host__ __device__ __noinline__
+#elif defined(__HIPCC__)
+#define INTEGRATORS_HOST_DEVICE_NOINLINE __host__ __device__ __attribute__((noinline))
+#else
+#define INTEGRATORS_HOST_DEVICE_NOINLINE __attribute__((noinline))
+#endif
+#endif
+
 namespace integrators {
 
 // Basic real type - can be changed to double/long double as needed
@@ -260,6 +270,16 @@ struct Array1D {
     INTEGRATORS_HOST_DEVICE constexpr const T& operator()(int i) const { return data[static_cast<std::size_t>(i - Lo)]; }
 };
 
+template <typename T, int Lo, int Hi>
+struct Array1DConstView {
+    static_assert(Hi >= Lo);
+    const T* data;
+
+    INTEGRATORS_HOST_DEVICE constexpr const T& operator()(int i) const {
+        return data[static_cast<std::size_t>(i - Lo)];
+    }
+};
+
 struct burn_t {
     Real rho{};
     Real T{};
@@ -338,19 +358,22 @@ INTEGRATORS_HOST_DEVICE void floor_and_normalize_number_densities(burn_t& state)
     normalize_number_densities_to_density(state);
 }
 
+template<class OutputType>
 INTEGRATORS_HOST_DEVICE
 void rhs_specie(const burn_t& state,
-             Array1D<Real, 1, neqs>& ydot,
-             const Array1D<Real, 0, NumSpec-1>& X,
+             OutputType& ydot,
+             const Array1DConstView<Real, 0, NumSpec-1>& X,
              Real const /*z*/) {
 
-    Real T = state.T;
+    const Real T = state.T;
+    const Real log_abs_T = std::log(std::abs(T));
+    const Real sqrt_T = std::sqrt(T);
 
-    Real x0 = std::exp((-0.75)*std::log(std::abs(T)));
+    Real x0 = std::exp((-0.75)*log_abs_T);
 
     Real x1 = 2.5950363272655348e-10*X(0)*X(4)*x0;
 
-    Real x2 = 1.3300135414628029e-18*std::exp((0.94999999999999996)*std::log(std::abs(T)))*X(0)*X(5)*std::exp(-0.00010729613733905579*T);
+    Real x2 = 1.3300135414628029e-18*std::exp((0.94999999999999996)*log_abs_T)*X(0)*X(5)*std::exp(-0.00010729613733905579*T);
 
     Real x3 = ((T)*(T));
 
@@ -386,17 +409,17 @@ void rhs_specie(const burn_t& state,
     Real x16 = X(2)*X(3);
 
     Real x17 = x16*((T <= 1160.0) ? (
-   1.4643482606109061e-16*std::exp((1.78186)*std::log(std::abs(T)))
+   1.4643482606109061e-16*std::exp((1.78186)*log_abs_T)
 )
 : (
-   3.3178155742407614e-14*std::exp((1.1394493358416311)*std::log(std::abs(T)))*std::exp(-10.993097527150175*x10 + 14.449862906216714*x11 + 58.228375789703179*x12 - 162.59852239006702*x13 + 144.55426734953477*x14 - 44.454280878123605*x15 - 12.447178055372778*x8 + 6.9391784778399117*x9)
+   3.3178155742407614e-14*std::exp((1.1394493358416311)*log_abs_T)*std::exp(-10.993097527150175*x10 + 14.449862906216714*x11 + 58.228375789703179*x12 - 162.59852239006702*x13 + 144.55426734953477*x14 - 44.454280878123605*x15 - 12.447178055372778*x8 + 6.9391784778399117*x9)
 ));
 
     Real x18 = X(1)*X(3);
 
-    Real x19 = 1.0e-8*std::exp((-0.40000000000000002)*std::log(std::abs(T)))*x18;
+    Real x19 = 1.0e-8*std::exp((-0.40000000000000002)*log_abs_T)*x18;
 
-    Real x20 = 2.6534040307116387e-9*std::exp((-0.10000000000000001)*std::log(std::abs(T)));
+    Real x20 = 2.6534040307116387e-9*std::exp((-0.10000000000000001)*log_abs_T);
 
     Real x21 = X(3)*X(5);
 
@@ -404,15 +427,15 @@ void rhs_specie(const burn_t& state,
 
     Real x23 = X(0)*X(2);
 
-    Real x24 = 1.4000000000000001e-18*std::exp((0.92800000000000005)*std::log(std::abs(T)))*x23*std::exp(-6.1728395061728397e-5*T);
+    Real x24 = 1.4000000000000001e-18*std::exp((0.92800000000000005)*log_abs_T)*x23*std::exp(-6.1728395061728397e-5*T);
 
     Real x25 = X(0)*X(12);
 
-    Real x26 = 3.8571873359681582e-209*std::exp((43.933476326349997)*std::log(std::abs(T)))*x25*std::exp(-5902.1601240760483*x10 + 5825.9326359379538*x11 - 3578.1439181805954*x12 + 1242.7294446825149*x13 - 186.35635455381879*x14 - 1618.789587733125*x8 + 3854.4033653120223*x9);
+    Real x26 = 3.8571873359681582e-209*std::exp((43.933476326349997)*log_abs_T)*x25*std::exp(-5902.1601240760483*x10 + 5825.9326359379538*x11 - 3578.1439181805954*x12 + 1242.7294446825149*x13 - 186.35635455381879*x14 - 1618.789587733125*x8 + 3854.4033653120223*x9);
 
-    Real x27 = 3.7903999274394518e-18*std::exp((2.360852208681)*std::log(std::abs(T)))*X(0)*X(3)*std::exp(-258.18559308467115*x10 + 846.15238706523724*x11 - 1113.0879095147111*x12 + 671.95094388835207*x13 - 154.90262957142161*x14 - 24.766609674457612*x8 + 13.307984239358756*x9);
+    Real x27 = 3.7903999274394518e-18*std::exp((2.360852208681)*log_abs_T)*X(0)*X(3)*std::exp(-258.18559308467115*x10 + 846.15238706523724*x11 - 1113.0879095147111*x12 + 671.95094388835207*x13 - 154.90262957142161*x14 - 24.766609674457612*x8 + 13.307984239358756*x9);
 
-    Real x28 = std::sqrt(T);
+    Real x28 = sqrt_T;
 
     Real x29 = 1.0/x28;
 
@@ -420,24 +443,24 @@ void rhs_specie(const burn_t& state,
 
     Real x31 = 5.7884371785482823e-10*X(11)*x30*std::exp((-1.7524)*std::log(std::abs(0.00060040841663220993*x28 + 1.0)))*std::exp((-0.24759999999999999)*std::log(std::abs(0.32668576019240059*x28 + 1.0)));
 
-    Real x32 = 1.4981088130721367e-10*std::exp((-0.63529999999999998)*std::log(std::abs(T)));
+    Real x32 = 1.4981088130721367e-10*std::exp((-0.63529999999999998)*log_abs_T);
 
     Real x33 = 8.6173430000000006e-5*T;
 
     Real x34 = 1.0/T;
 
-    Real x35 = -4.3524079114767552e-117*std::exp((23.915965629999999)*std::log(std::abs(T)))*X(0)*X(13)*std::exp(-4361.9927099007555*x10 + 4879.7345146260486*x11 - 3366.4639698826941*x12 + 1300.3028484326148*x13 - 214.82451513312137*x14 - 941.91483008144996*x8 + 2506.9866529060901*x9) + x25*((x33 <= 9280.0) ? (
+    Real x35 = -4.3524079114767552e-117*std::exp((23.915965629999999)*log_abs_T)*X(0)*X(13)*std::exp(-4361.9927099007555*x10 + 4879.7345146260486*x11 - 3366.4639698826941*x12 + 1300.3028484326148*x13 - 214.82451513312137*x14 - 941.91483008144996*x8 + 2506.9866529060901*x9) + x25*((x33 <= 9280.0) ? (
    x32
 )
 : (
-   1250086.112245841*std::exp((-1.5)*std::log(std::abs(T)))*(1.5400000000000001e-9 + 4.6200000000000001e-10*std::exp(-93988.701501924661*x34))*std::exp(-469943.50750964211*x34) + x32
+   1250086.112245841*std::exp((-1.5)*log_abs_T)*(1.5400000000000001e-9 + 4.6200000000000001e-10*std::exp(-93988.701501924661*x34))*std::exp(-469943.50750964211*x34) + x32
 ));
 
-    Real x36 = -5.9082438637265071e-70*std::exp((13.536555999999999)*std::log(std::abs(T)))*x23*std::exp(-2207.4643501257692*x10 + 2500.8077583366976*x11 - 1768.8867461266502*x12 + 704.19926629500367*x13 - 120.0438480494693*x14 - 502.72883252679094*x8 + 1281.477767828706*x9) + X(0)*X(1)*((x33 <= 5500.0) ? (
+    Real x36 = -5.9082438637265071e-70*std::exp((13.536555999999999)*log_abs_T)*x23*std::exp(-2207.4643501257692*x10 + 2500.8077583366976*x11 - 1768.8867461266502*x12 + 704.19926629500367*x13 - 120.0438480494693*x14 - 502.72883252679094*x8 + 1281.477767828706*x9) + X(0)*X(1)*((x33 <= 5500.0) ? (
    x32
 )
 : (
-   3.2867337024382687e-10*std::exp((-0.72411256578268512)*std::log(std::abs(T)))*std::exp(-2.4649195146505534*x10 - 1.020773727011937*x11 + 3.3530579587656564*x12 + 3.6203127646377791*x13 - 1.0930705283186732*x14 - 1.6921001126637107*x15 - 1.774686809424741*x8 - 1.951835616513679*x9)
+   3.2867337024382687e-10*std::exp((-0.72411256578268512)*log_abs_T)*std::exp(-2.4649195146505534*x10 - 1.020773727011937*x11 + 3.3530579587656564*x12 + 3.6203127646377791*x13 - 1.0930705283186732*x14 - 1.6921001126637107*x15 - 1.774686809424741*x8 - 1.951835616513679*x9)
 ));
 
     Real x37 = 7.1999999999999996e-8*X(9)*x30;
@@ -446,11 +469,11 @@ void rhs_specie(const burn_t& state,
 
     Real x39 = x20*x38;
 
-    Real x40 = x16*(1.3500000000000001e-9*std::exp((0.098492999999999997)*std::log(std::abs(T))) + 4.4350199999999998e-10*std::exp((0.55610000000000004)*std::log(std::abs(T))) + 3.7408500000000004e-16*std::exp((2.1825999999999999)*std::log(std::abs(T))))/(0.0061910000000000003*std::exp((1.0461)*std::log(std::abs(T))) + 8.9711999999999997e-11*std::exp((3.0424000000000002)*std::log(std::abs(T))) + 3.2575999999999999e-14*std::exp((3.7740999999999998)*std::log(std::abs(T))) + 1.0);
+    Real x40 = x16*(1.3500000000000001e-9*std::exp((0.098492999999999997)*log_abs_T) + 4.4350199999999998e-10*std::exp((0.55610000000000004)*log_abs_T) + 3.7408500000000004e-16*std::exp((2.1825999999999999)*log_abs_T))/(0.0061910000000000003*std::exp((1.0461)*log_abs_T) + 8.9711999999999997e-11*std::exp((3.0424000000000002)*log_abs_T) + 3.2575999999999999e-14*std::exp((3.7740999999999998)*log_abs_T) + 1.0);
 
     Real x41 = X(0)*X(8);
 
-    Real x42 = 35.5*std::exp((-2.2799999999999998)*std::log(std::abs(T)))*x41*std::exp(-46707.0*x34);
+    Real x42 = 35.5*std::exp((-2.2799999999999998)*log_abs_T)*x41*std::exp(-46707.0*x34);
 
     Real x43 = x37 - x39 - x40 + x42;
 
@@ -488,7 +511,7 @@ void rhs_specie(const burn_t& state,
     Real x57 = x56/((x44)*(x44)*(x44));
 
     Real x58 = X(1)*X(2)*((T < 30) ? (
-   3.4977396723747635e-20*std::exp((-0.14999999999999999)*std::log(std::abs(T)))
+   3.4977396723747635e-20*std::exp((-0.14999999999999999)*log_abs_T)
 )
 : (
    std::exp((-3.194*x46 + 1.786*x52*x53 - 0.2072*x57 - 18.199999999999999)*std::log(std::abs(10)))
@@ -515,7 +538,7 @@ void rhs_specie(const burn_t& state,
 
     Real x66 = -x65;
 
-    Real x67 = std::exp((-0.5)*std::log(std::abs(T)));
+    Real x67 = std::exp((-0.5)*log_abs_T);
 
     Real x68 = X(7)*x67;
 
@@ -525,17 +548,17 @@ void rhs_specie(const burn_t& state,
    1.26e-9*x0*std::exp(-127500.0*x34)
 )
 : (
-   4.0000000000000003e-37*std::exp((4.7400000000000002)*std::log(std::abs(T)))
+   4.0000000000000003e-37*std::exp((4.7400000000000002)*log_abs_T)
 ));
 
-    Real x71 = std::exp((0.25)*std::log(std::abs(T)));
+    Real x71 = std::exp((0.25)*log_abs_T);
 
     Real x72 = 2.8833736969617052e-16*X(12)*X(2)*x71;
 
     Real x73 = T >= 50.0;
 
     Real x74 = x48*((x73) ? (
-   2.0000000000000001e-10*std::exp((0.40200000000000002)*std::log(std::abs(T)))*std::exp(-37.100000000000001*x34) - 3.3099999999999998e-17*std::exp((1.48)*std::log(std::abs(T)))
+   2.0000000000000001e-10*std::exp((0.40200000000000002)*log_abs_T)*std::exp(-37.100000000000001*x34) - 3.3099999999999998e-17*std::exp((1.48)*log_abs_T)
 )
 : (
    0
@@ -544,7 +567,7 @@ void rhs_specie(const burn_t& state,
     Real x75 = X(2)*X(4);
 
     Real x76 = x75*((x73) ? (
-   2.0299999999999998e-9*std::exp((-0.33200000000000002)*std::log(std::abs(T))) + 2.0600000000000001e-10*std::exp((0.39600000000000002)*std::log(std::abs(T)))*std::exp(-33.0*x34)
+   2.0299999999999998e-9*std::exp((-0.33200000000000002)*log_abs_T) + 2.0600000000000001e-10*std::exp((0.39600000000000002)*log_abs_T)*std::exp(-33.0*x34)
 )
 : (
    0
@@ -596,7 +619,7 @@ void rhs_specie(const burn_t& state,
 
     Real x99 = ((X(8))*(X(8)))*std::exp((x98)*std::log(std::abs(1.1800000000000001e-10*std::exp(-69500.0*x34))))*std::exp((1.0 - x98)*std::log(std::abs(8.1250000000000003e-8*x67*(1.0 - std::exp(-6000.0*x34))*std::exp(-52000.0*x34))));
 
-    Real x100 = std::exp((0.34999999999999998)*std::log(std::abs(T)))*x41*std::exp(-102000.0*x34);
+    Real x100 = std::exp((0.34999999999999998)*log_abs_T)*x41*std::exp(-102000.0*x34);
 
     Real x101 = X(5)*X(8)*((T <= 1167.4796423742259) ? (
    std::exp((5.8888600000000002*x46 + 7.1969200000000004*x54 + 2.2506900000000001*x57 - 56.473700000000001 - 2.1690299999999998*x60/((((x44)*(x44)))*(((x44)*(x44)))) + 0.31788699999999998*x61/((x44)*(x44)*(x44)*(x44)*(x44)))*std::log(std::abs(10)))
@@ -614,7 +637,7 @@ void rhs_specie(const burn_t& state,
 
     Real x103 = x101 - x102;
 
-    Real x104 = 6.1739095063118665e-10*std::exp((0.40999999999999998)*std::log(std::abs(T)));
+    Real x104 = 6.1739095063118665e-10*std::exp((0.40999999999999998)*log_abs_T);
 
     Real x105 = x104*x21;
 
@@ -677,15 +700,17 @@ void rhs_specie(const burn_t& state,
 }
 
 INTEGRATORS_HOST_DEVICE Real rhs_eint(const burn_t& state,
-             const Array1D<Real, 0, NumSpec-1>& X,
+             const Array1DConstView<Real, 0, NumSpec-1>& X,
              Real const z) {
 
-    Real T = state.T;
+    const Real T = state.T;
+    const Real log_abs_T = std::log(std::abs(T));
+    const Real sqrt_T = std::sqrt(T);
         Real x0 = 9.1093818800000008e-28*X(0) + 1.6726215800000001e-24*X(1) + 5.01956503638e-24*X(10) + 6.6902431600000005e-24*X(11) + 6.6911540981899994e-24*X(12) + 6.6920650363799998e-24*X(13) + 1.6735325181900001e-24*X(2) + 1.6744434563800001e-24*X(3) + 3.3451215800000003e-24*X(4) + 3.3460325181899999e-24*X(5) + 3.3461540981899999e-24*X(6) + 3.3469434563800003e-24*X(7) + 3.3470650363800003e-24*X(8) + 5.0186540981899997e-24*X(9);
 
     Real x1 = 1.0/x0;
 
-    Real x2 = std::sqrt(T);
+    Real x2 = sqrt_T;
 
     Real x3 = X(1) + X(12) + X(4);
 
@@ -704,7 +729,7 @@ INTEGRATORS_HOST_DEVICE Real rhs_eint(const burn_t& state,
    x4
 ));
 
-    Real x9 = std::sqrt(T);
+    Real x9 = sqrt_T;
 
     Real x10 = ((x6) ? (
    std::sqrt(10)
@@ -723,12 +748,12 @@ INTEGRATORS_HOST_DEVICE Real rhs_eint(const burn_t& state,
    0.63095734448019325
 )
 : (
-   std::exp((-0.20000000000000001)*std::log(std::abs(T)))
+   std::exp((-0.20000000000000001)*log_abs_T)
 ))/(6.3095734448019361e-5*((x6) ? (
    5.011872336272722
 )
 : (
-   std::exp((0.69999999999999996)*std::log(std::abs(T)))
+   std::exp((0.69999999999999996)*log_abs_T)
 )) + 1.0);
 
     Real x15 = 1.0/x2;
@@ -745,10 +770,10 @@ INTEGRATORS_HOST_DEVICE Real rhs_eint(const burn_t& state,
    0.67810976749343443
 )
 : (
-   std::exp((-0.16869999999999999)*std::log(std::abs(T)))
+   std::exp((-0.16869999999999999)*log_abs_T)
 ));
 
-    Real x21 = std::exp((-0.25)*std::log(std::abs(T)));
+    Real x21 = std::exp((-0.25)*log_abs_T);
 
     Real x22 = std::sqrt(M_PI);
 
@@ -880,7 +905,7 @@ INTEGRATORS_HOST_DEVICE Real rhs_eint(const burn_t& state,
 
     Real x71 = 28601.610899577994*std::exp((-0.45000000000000001)*std::log(std::abs(x59)));
 
-    Real x72 = 4.985670872372847e-33*std::exp((3.7599999999999998)*std::log(std::abs(T)))*std::exp(-2197000.0/((T)*(T)*(T)))/(6.0142468035272636e-8*std::exp((2.1000000000000001)*std::log(std::abs(T))) + 1.0) + 1.6e-18*std::exp(-11700.0*x4) + 6.7e-19*std::exp(-5860.0*x4) + 3.0e-24*std::exp(-510.0*x4);
+    Real x72 = 4.985670872372847e-33*std::exp((3.7599999999999998)*log_abs_T)*std::exp(-2197000.0/((T)*(T)*(T)))/(6.0142468035272636e-8*std::exp((2.1000000000000001)*log_abs_T) + 1.0) + 1.6e-18*std::exp(-11700.0*x4) + 6.7e-19*std::exp(-5860.0*x4) + 3.0e-24*std::exp(-510.0*x4);
 
     Real x73 = T < 2000.0;
 
@@ -929,7 +954,7 @@ INTEGRATORS_HOST_DEVICE Real rhs_eint(const burn_t& state,
    ))) + 1.0)
 )));
 
-    Real x90 = std::exp((25.0*x25)*std::log(std::abs(T)));
+    Real x90 = std::exp((25.0*x25)*log_abs_T);
 
     Real x91 = std::exp((-200.0 + 20000.0/((10.0 + 2.3538526683701997e+17/x90)*(1.6889118802245084e-48*x90 + 10.0)))*std::log(std::abs(10.0)));
 
@@ -947,7 +972,7 @@ INTEGRATORS_HOST_DEVICE Real rhs_eint(const burn_t& state,
 
     Real x98 = x85 && x97;
 
-    Real x99 = std::exp((16.666666666666664*x25)*std::log(std::abs(T)));
+    Real x99 = std::exp((16.666666666666664*x25)*log_abs_T);
 
     Real x100 = std::exp((-200.0 + 20000.0/((10.0 + 785.77199422741614/x99)*(5.0592917094448065e-34*x99 + 10.0)))*std::log(std::abs(10.0)));
 
@@ -969,7 +994,7 @@ INTEGRATORS_HOST_DEVICE Real rhs_eint(const burn_t& state,
 
     Real x109 = T <= 6000.0;
 
-    Real x110 = std::exp((17.997580222853362*x25)*std::log(std::abs(T)));
+    Real x110 = std::exp((17.997580222853362*x25)*log_abs_T);
 
     Real x111 = 1.8623144679125181e-22*std::exp((-200.0 + 20000.0/((10.0 + 2973.7534532281375/x110)*(1.3368457736780898e-34*x110 + 10.0)))*std::log(std::abs(10.0)))*X(2);
 
@@ -1103,7 +1128,7 @@ INTEGRATORS_HOST_DEVICE Real rhs_eint(const burn_t& state,
     Real x161 = 5.5313336794064847e-19/(0.0024787521766663585*std::exp(x86) + 1.0) >= 1.0e-99;
 
 
-    return (x1*(-3.1438547368704001e-21*std::exp((0.34999999999999998)*std::log(std::abs(T)))*X(0)*X(8)*std::exp(-102000.0*x4) - 0.00022681492*((((T)*(T)))*(((T)*(T))))*x0*x58*((((x55 && x57 && x60 && x61) ? (
+    return (x1*(-3.1438547368704001e-21*std::exp((0.34999999999999998)*log_abs_T)*X(0)*X(8)*std::exp(-102000.0*x4) - 0.00022681492*((((T)*(T)))*(((T)*(T))))*x0*x58*((((x55 && x57 && x60 && x61) ? (
    4.8339620236294848e-32/((x63 + 2.1986273043946046e-56)*(x63 + 2.1986273043946046e-56)) >= 1.0
 )
 : (
@@ -1183,21 +1208,21 @@ INTEGRATORS_HOST_DEVICE Real rhs_eint(const burn_t& state,
    : (
       2.232953576238777e+46*x68
    ))) + 2.1986273043946046e-36))
-)) + 0.00084373771595996178*T*(1.3806479999999999e-16*X(0) + 1.3806479999999999e-16*X(1) + 1.3806479999999999e-16*X(10) + 1.3806479999999999e-16*X(11) + 1.3806479999999999e-16*X(12) + 1.3806479999999999e-16*X(13) + 1.3806479999999999e-16*X(2) + 1.3806479999999999e-16*X(3) + 1.3806479999999999e-16*X(4) + 1.3806479999999999e-16*X(5) + 1.3806479999999999e-16*X(6) + 1.3806479999999999e-16*X(7) + 1.3806479999999999e-16*X(8) + 1.3806479999999999e-16*X(9))/(std::sqrt(x1)*x22) - 2.1299999999999999e-27*X(0)*x2*(4.0*X(11) + x3) - 5.6500000000000001e-36*X(0)*(T - x5)*((((z + 1.0)*(z + 1.0)))*(((z + 1.0)*(z + 1.0)))) - 3.4635323838154264e-26*X(1)*x14 - 1.3854129535261706e-25*X(11)*x14 - 9.3799999999999993e-22*X(13)*x10*x12*std::exp(-285335.40000000002*x8) + 7.1777505408000004e-12*((X(2))*(X(2))*(X(2)))*x18*(2.0000000000000002e-31*x15 + 6.0000000000000001e-32*x21) + 7.1777505408000004e-12*((X(2))*(X(2)))*X(8)*x18*(2.5000000000000002e-32*x15 + 7.5000000000000001e-33*x21) + 5.6556829037999995e-12*X(2)*X(3)*x18*(1.3500000000000001e-9*std::exp((0.098492999999999997)*std::log(std::abs(T))) + 4.4350199999999998e-10*std::exp((0.55610000000000004)*std::log(std::abs(T))) + 3.7408500000000004e-16*std::exp((2.1825999999999999)*std::log(std::abs(T))))/(0.0061910000000000003*std::exp((1.0461)*std::log(std::abs(T))) + 8.9711999999999997e-11*std::exp((3.0424000000000002)*std::log(std::abs(T))) + 3.2575999999999999e-14*std::exp((3.7740999999999998)*std::log(std::abs(T))) + 1.0) + 1.75918975308e-21*X(2)*X(6)*x18 - 7.1777505408000004e-12*X(2)*X(8)*(std::exp((42.707410000000003*x23*x25 - 2.0273650000000001*x29 - 21467.790000000001*x4 - 1657.4099999999999*x4/(std::exp((x39)*std::log(std::abs(std::exp((-x38 - 8.1313220000000008)*std::log(std::abs(10.0)))*x17))) + 1.0) - x40 - 142.7664 - (70.138370000000009*x23*x25 + 11.28215*x25*std::log(14254.549999999999*x4 + 1.0) - 4.7035149999999994*x29 - x40 - 203.11568)/(std::exp((x39)*std::log(std::abs(std::exp((-x38 - 9.3055640000000004)*std::log(std::abs(10.0)))*x17))) + 1.0))*std::log(std::abs(10.0))) + std::exp((43.20243*x26*x28 - 68.422430000000006*x34 - x37 - 23705.700000000001*x4 - 2080.4099999999999*x4/(std::exp((x33)*std::log(std::abs(std::exp((-x30 - 13.656822)*std::log(std::abs(10.0)))*x17))) + 1.0) - 178.4239 - (19.734269999999999*x25*std::log(16780.950000000001*x4 + 1.0) + 37.886913*x26*x28 - 14.509090000000008*x34 - x37 - 307.31920000000002)/(std::exp((x33)*std::log(std::abs(std::exp((-x30 - 14.82123)*std::log(std::abs(10.0)))*x17))) + 1.0))*std::log(std::abs(10.0)))) - 7.1777505408000004e-12*((X(8))*(X(8)))*std::exp((x27)*std::log(std::abs(1.1800000000000001e-10*std::exp(-69500.0*x4))))*std::exp((1.0 - x27)*std::log(std::abs(8.1250000000000003e-8*x15*(1.0 - std::exp(-6000.0*x4))*std::exp(-52000.0*x4)))) - 1.2700000000000001e-21*x10*x13*std::exp(-157809.10000000001*x8) - 4.9500000000000001e-22*x10*x19*std::exp(-631515.0*x8) - 7.4999999999999996e-19*x13*std::exp(-118348.0*x8) - 5.5399999999999998e-17*x19*((x6) ? (
+)) + 0.00084373771595996178*T*(1.3806479999999999e-16*X(0) + 1.3806479999999999e-16*X(1) + 1.3806479999999999e-16*X(10) + 1.3806479999999999e-16*X(11) + 1.3806479999999999e-16*X(12) + 1.3806479999999999e-16*X(13) + 1.3806479999999999e-16*X(2) + 1.3806479999999999e-16*X(3) + 1.3806479999999999e-16*X(4) + 1.3806479999999999e-16*X(5) + 1.3806479999999999e-16*X(6) + 1.3806479999999999e-16*X(7) + 1.3806479999999999e-16*X(8) + 1.3806479999999999e-16*X(9))/(std::sqrt(x1)*x22) - 2.1299999999999999e-27*X(0)*x2*(4.0*X(11) + x3) - 5.6500000000000001e-36*X(0)*(T - x5)*((((z + 1.0)*(z + 1.0)))*(((z + 1.0)*(z + 1.0)))) - 3.4635323838154264e-26*X(1)*x14 - 1.3854129535261706e-25*X(11)*x14 - 9.3799999999999993e-22*X(13)*x10*x12*std::exp(-285335.40000000002*x8) + 7.1777505408000004e-12*((X(2))*(X(2))*(X(2)))*x18*(2.0000000000000002e-31*x15 + 6.0000000000000001e-32*x21) + 7.1777505408000004e-12*((X(2))*(X(2)))*X(8)*x18*(2.5000000000000002e-32*x15 + 7.5000000000000001e-33*x21) + 5.6556829037999995e-12*X(2)*X(3)*x18*(1.3500000000000001e-9*std::exp((0.098492999999999997)*log_abs_T) + 4.4350199999999998e-10*std::exp((0.55610000000000004)*log_abs_T) + 3.7408500000000004e-16*std::exp((2.1825999999999999)*log_abs_T))/(0.0061910000000000003*std::exp((1.0461)*log_abs_T) + 8.9711999999999997e-11*std::exp((3.0424000000000002)*log_abs_T) + 3.2575999999999999e-14*std::exp((3.7740999999999998)*log_abs_T) + 1.0) + 1.75918975308e-21*X(2)*X(6)*x18 - 7.1777505408000004e-12*X(2)*X(8)*(std::exp((42.707410000000003*x23*x25 - 2.0273650000000001*x29 - 21467.790000000001*x4 - 1657.4099999999999*x4/(std::exp((x39)*std::log(std::abs(std::exp((-x38 - 8.1313220000000008)*std::log(std::abs(10.0)))*x17))) + 1.0) - x40 - 142.7664 - (70.138370000000009*x23*x25 + 11.28215*x25*std::log(14254.549999999999*x4 + 1.0) - 4.7035149999999994*x29 - x40 - 203.11568)/(std::exp((x39)*std::log(std::abs(std::exp((-x38 - 9.3055640000000004)*std::log(std::abs(10.0)))*x17))) + 1.0))*std::log(std::abs(10.0))) + std::exp((43.20243*x26*x28 - 68.422430000000006*x34 - x37 - 23705.700000000001*x4 - 2080.4099999999999*x4/(std::exp((x33)*std::log(std::abs(std::exp((-x30 - 13.656822)*std::log(std::abs(10.0)))*x17))) + 1.0) - 178.4239 - (19.734269999999999*x25*std::log(16780.950000000001*x4 + 1.0) + 37.886913*x26*x28 - 14.509090000000008*x34 - x37 - 307.31920000000002)/(std::exp((x33)*std::log(std::abs(std::exp((-x30 - 14.82123)*std::log(std::abs(10.0)))*x17))) + 1.0))*std::log(std::abs(10.0)))) - 7.1777505408000004e-12*((X(8))*(X(8)))*std::exp((x27)*std::log(std::abs(1.1800000000000001e-10*std::exp(-69500.0*x4))))*std::exp((1.0 - x27)*std::log(std::abs(8.1250000000000003e-8*x15*(1.0 - std::exp(-6000.0*x4))*std::exp(-52000.0*x4)))) - 1.2700000000000001e-21*x10*x13*std::exp(-157809.10000000001*x8) - 4.9500000000000001e-22*x10*x19*std::exp(-631515.0*x8) - 7.4999999999999996e-19*x13*std::exp(-118348.0*x8) - 5.5399999999999998e-17*x19*((x6) ? (
    0.4008667176273028
 )
 : (
-   std::exp((-0.39700000000000002)*std::log(std::abs(T)))
+   std::exp((-0.39700000000000002)*log_abs_T)
 ))*std::exp(-473638.0*x8) - 5.0099999999999997e-27*x20*std::exp(-55338.0*x8) - 9.1000000000000001e-27*x20*std::exp(-13179.0*x8) - 1.24e-13*x7*(1.0 + 0.29999999999999999*std::exp(-94000.0*x8))*((x6) ? (
    0.031622776601683791
 )
 : (
-   std::exp((-1.5)*std::log(std::abs(T)))
+   std::exp((-1.5)*log_abs_T)
 ))*std::exp(-470000.0*x8) - 1.5499999999999999e-26*x7*((x6) ? (
    2.3157944032250755
 )
 : (
-   std::exp((0.36470000000000002)*std::log(std::abs(T)))
+   std::exp((0.36470000000000002)*log_abs_T)
 )) - ((T < 2.0) ? (
    0
 )
@@ -1512,14 +1537,12 @@ INTEGRATORS_HOST_DEVICE Real rhs_eint(const burn_t& state,
 }
 
 
-INTEGRATORS_HOST_DEVICE void actual_rhs (burn_t& state, Array1D<Real, 1, neqs>& ydot)
+template<class OutputType>
+INTEGRATORS_HOST_DEVICE void actual_rhs (const burn_t& state, OutputType& ydot)
 {
     Real z = redshift();
 
-    Array1D<Real, 0, NumSpec-1> X;
-    for (int i = 0; i < NumSpec; ++i) {
-           X(i) = state.xn[i];
-    }
+    const Array1DConstView<Real, 0, NumSpec-1> X{state.xn.data()};
     // YDOTS
 
     rhs_specie(state, ydot, X, z);
@@ -1538,549 +1561,551 @@ INTEGRATORS_HOST_DEVICE void actual_rhs (burn_t& state, Array1D<Real, 1, neqs>& 
 template<class MatrixType>
 INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
              MatrixType& jac,
-             const Array1D<Real, 0, NumSpec-1>& X,
+             const Array1DConstView<Real, 0, NumSpec-1>& X,
              Real const z)
 {
 
-    Real T = state.T;
+    const Real T = state.T;
+    const Real log_abs_T = std::log(std::abs(T));
+    const Real sqrt_T = std::sqrt(T);
 
-    Real x0 = 0;
-    Real x1 = 0;
-    Real x2 = 0;
-    Real x3 = 0;
-    Real x4 = 0;
-    Real x5 = 0;
-    Real x6 = 0;
-    Real x7 = 0;
-    Real x8 = 0;
-    Real x9 = 0;
-    Real x10 = 0;
-    Real x11 = 0;
-    Real x12 = 0;
-    Real x13 = 0;
-    Real x14 = 0;
-    Real x15 = 0;
-    Real x16 = 0;
-    Real x17 = 0;
-    Real x18 = 0;
-    Real x19 = 0;
-    Real x20 = 0;
-    Real x21 = 0;
-    Real x22 = 0;
-    Real x23 = 0;
-    Real x24 = 0;
-    Real x25 = 0;
-    Real x26 = 0;
-    Real x27 = 0;
-    Real x28 = 0;
-    Real x29 = 0;
-    Real x30 = 0;
-    Real x31 = 0;
-    Real x32 = 0;
-    Real x33 = 0;
-    Real x34 = 0;
-    Real x35 = 0;
-    Real x36 = 0;
-    Real x37 = 0;
-    Real x38 = 0;
-    Real x39 = 0;
-    Real x40 = 0;
-    Real x41 = 0;
-    Real x42 = 0;
-    Real x43 = 0;
-    Real x44 = 0;
-    Real x45 = 0;
-    Real x46 = 0;
-    Real x47 = 0;
-    Real x48 = 0;
-    Real x49 = 0;
-    Real x50 = 0;
-    Real x51 = 0;
-    Real x52 = 0;
-    Real x53 = 0;
-    Real x54 = 0;
-    Real x55 = 0;
-    Real x56 = 0;
-    Real x57 = 0;
-    Real x58 = 0;
-    Real x59 = 0;
-    Real x60 = 0;
-    Real x61 = 0;
-    Real x62 = 0;
-    Real x63 = 0;
-    Real x64 = 0;
-    Real x65 = 0;
-    Real x66 = 0;
-    Real x67 = 0;
-    Real x68 = 0;
-    Real x69 = 0;
-    Real x70 = 0;
-    Real x71 = 0;
-    Real x72 = 0;
-    Real x73 = 0;
-    Real x74 = 0;
-    Real x75 = 0;
-    Real x76 = 0;
-    Real x77 = 0;
-    Real x78 = 0;
-    Real x79 = 0;
-    Real x80 = 0;
-    Real x81 = 0;
-    Real x82 = 0;
-    Real x83 = 0;
-    Real x84 = 0;
-    Real x85 = 0;
-    Real x86 = 0;
-    Real x87 = 0;
-    Real x88 = 0;
-    Real x89 = 0;
-    Real x90 = 0;
-    Real x91 = 0;
-    Real x92 = 0;
-    Real x93 = 0;
-    Real x94 = 0;
-    Real x95 = 0;
-    Real x96 = 0;
-    Real x97 = 0;
-    Real x98 = 0;
-    Real x99 = 0;
-    Real x100 = 0;
-    Real x101 = 0;
-    Real x102 = 0;
-    Real x103 = 0;
-    Real x104 = 0;
-    Real x105 = 0;
-    Real x106 = 0;
-    Real x107 = 0;
-    Real x108 = 0;
-    Real x109 = 0;
-    Real x110 = 0;
-    Real x111 = 0;
-    Real x112 = 0;
-    Real x113 = 0;
-    Real x114 = 0;
-    Real x115 = 0;
-    Real x116 = 0;
-    Real x117 = 0;
-    Real x118 = 0;
-    Real x119 = 0;
-    Real x120 = 0;
-    Real x121 = 0;
-    Real x122 = 0;
-    Real x123 = 0;
-    Real x124 = 0;
-    Real x125 = 0;
-    Real x126 = 0;
-    Real x127 = 0;
-    Real x128 = 0;
-    Real x129 = 0;
-    Real x130 = 0;
-    Real x131 = 0;
-    Real x132 = 0;
-    Real x133 = 0;
-    Real x134 = 0;
-    Real x135 = 0;
-    Real x136 = 0;
-    Real x137 = 0;
-    Real x138 = 0;
-    Real x139 = 0;
-    Real x140 = 0;
-    Real x141 = 0;
-    Real x142 = 0;
-    Real x143 = 0;
-    Real x144 = 0;
-    Real x145 = 0;
-    Real x146 = 0;
-    Real x147 = 0;
-    Real x148 = 0;
-    Real x149 = 0;
-    Real x150 = 0;
-    Real x151 = 0;
-    Real x152 = 0;
-    Real x153 = 0;
-    Real x154 = 0;
-    Real x155 = 0;
-    Real x156 = 0;
-    Real x157 = 0;
-    Real x158 = 0;
-    Real x159 = 0;
-    Real x160 = 0;
-    Real x161 = 0;
-    Real x162 = 0;
-    Real x163 = 0;
-    Real x164 = 0;
-    Real x165 = 0;
-    Real x166 = 0;
-    Real x167 = 0;
-    Real x168 = 0;
-    Real x169 = 0;
-    Real x170 = 0;
-    Real x171 = 0;
-    Real x172 = 0;
-    Real x173 = 0;
-    Real x174 = 0;
-    Real x175 = 0;
-    Real x176 = 0;
-    Real x177 = 0;
-    Real x178 = 0;
-    Real x179 = 0;
-    Real x180 = 0;
-    Real x181 = 0;
-    Real x182 = 0;
-    Real x183 = 0;
-    Real x184 = 0;
-    Real x185 = 0;
-    Real x186 = 0;
-    Real x187 = 0;
-    Real x188 = 0;
-    Real x189 = 0;
-    Real x190 = 0;
-    Real x191 = 0;
-    Real x192 = 0;
-    Real x193 = 0;
-    Real x194 = 0;
-    Real x195 = 0;
-    Real x196 = 0;
-    Real x197 = 0;
-    Real x198 = 0;
-    Real x199 = 0;
-    Real x200 = 0;
-    Real x201 = 0;
-    Real x202 = 0;
-    Real x203 = 0;
-    Real x204 = 0;
-    Real x205 = 0;
-    Real x206 = 0;
-    Real x207 = 0;
-    Real x208 = 0;
-    Real x209 = 0;
-    Real x210 = 0;
-    Real x211 = 0;
-    Real x212 = 0;
-    Real x213 = 0;
-    Real x214 = 0;
-    Real x215 = 0;
-    Real x216 = 0;
-    Real x217 = 0;
-    Real x218 = 0;
-    Real x219 = 0;
-    Real x220 = 0;
-    Real x221 = 0;
-    Real x222 = 0;
-    Real x223 = 0;
-    Real x224 = 0;
-    Real x225 = 0;
-    Real x226 = 0;
-    Real x227 = 0;
-    Real x228 = 0;
-    Real x229 = 0;
-    Real x230 = 0;
-    Real x231 = 0;
-    Real x232 = 0;
-    Real x233 = 0;
-    Real x234 = 0;
-    Real x235 = 0;
-    Real x236 = 0;
-    Real x237 = 0;
-    Real x238 = 0;
-    Real x239 = 0;
-    Real x240 = 0;
-    Real x241 = 0;
-    Real x242 = 0;
-    Real x243 = 0;
-    Real x244 = 0;
-    Real x245 = 0;
-    Real x246 = 0;
-    Real x247 = 0;
-    Real x248 = 0;
-    Real x249 = 0;
-    Real x250 = 0;
-    Real x251 = 0;
-    Real x252 = 0;
-    Real x253 = 0;
-    Real x254 = 0;
-    Real x255 = 0;
-    Real x256 = 0;
-    Real x257 = 0;
-    Real x258 = 0;
-    Real x259 = 0;
-    Real x260 = 0;
-    Real x261 = 0;
-    Real x262 = 0;
-    Real x263 = 0;
-    Real x264 = 0;
-    Real x265 = 0;
-    Real x266 = 0;
-    Real x267 = 0;
-    Real x268 = 0;
-    Real x269 = 0;
-    Real x270 = 0;
-    Real x271 = 0;
-    Real x272 = 0;
-    Real x273 = 0;
-    Real x274 = 0;
-    Real x275 = 0;
-    Real x276 = 0;
-    Real x277 = 0;
-    Real x278 = 0;
-    Real x279 = 0;
-    Real x280 = 0;
-    Real x281 = 0;
-    Real x282 = 0;
-    Real x283 = 0;
-    Real x284 = 0;
-    Real x285 = 0;
-    Real x286 = 0;
-    Real x287 = 0;
-    Real x288 = 0;
-    Real x289 = 0;
-    Real x290 = 0;
-    Real x291 = 0;
-    Real x292 = 0;
-    Real x293 = 0;
-    Real x294 = 0;
-    Real x295 = 0;
-    Real x296 = 0;
-    Real x297 = 0;
-    Real x298 = 0;
-    Real x299 = 0;
-    Real x300 = 0;
-    Real x301 = 0;
-    Real x302 = 0;
-    Real x303 = 0;
-    Real x304 = 0;
-    Real x305 = 0;
-    Real x306 = 0;
-    Real x307 = 0;
-    Real x308 = 0;
-    Real x309 = 0;
-    Real x310 = 0;
-    Real x311 = 0;
-    Real x312 = 0;
-    Real x313 = 0;
-    Real x314 = 0;
-    Real x315 = 0;
-    Real x316 = 0;
-    Real x317 = 0;
-    Real x318 = 0;
-    Real x319 = 0;
-    Real x320 = 0;
-    Real x321 = 0;
-    Real x322 = 0;
-    Real x323 = 0;
-    Real x324 = 0;
-    Real x325 = 0;
-    Real x326 = 0;
-    Real x327 = 0;
-    Real x328 = 0;
-    Real x329 = 0;
-    Real x330 = 0;
-    Real x331 = 0;
-    Real x332 = 0;
-    Real x333 = 0;
-    Real x334 = 0;
-    Real x335 = 0;
-    Real x336 = 0;
-    Real x337 = 0;
-    Real x338 = 0;
-    Real x339 = 0;
-    Real x340 = 0;
-    Real x341 = 0;
-    Real x342 = 0;
-    Real x343 = 0;
-    Real x344 = 0;
-    Real x345 = 0;
-    Real x346 = 0;
-    Real x347 = 0;
-    Real x348 = 0;
-    Real x349 = 0;
-    Real x350 = 0;
-    Real x351 = 0;
-    Real x352 = 0;
-    Real x353 = 0;
-    Real x354 = 0;
-    Real x355 = 0;
-    Real x356 = 0;
-    Real x357 = 0;
-    Real x358 = 0;
-    Real x359 = 0;
-    Real x360 = 0;
-    Real x361 = 0;
-    Real x362 = 0;
-    Real x363 = 0;
-    Real x364 = 0;
-    Real x365 = 0;
-    Real x366 = 0;
-    Real x367 = 0;
-    Real x368 = 0;
-    Real x369 = 0;
-    Real x370 = 0;
-    Real x371 = 0;
-    Real x372 = 0;
-    Real x373 = 0;
-    Real x374 = 0;
-    Real x375 = 0;
-    Real x376 = 0;
-    Real x377 = 0;
-    Real x378 = 0;
-    Real x379 = 0;
-    Real x380 = 0;
-    Real x381 = 0;
-    Real x382 = 0;
-    Real x383 = 0;
-    Real x384 = 0;
-    Real x385 = 0;
-    Real x386 = 0;
-    Real x387 = 0;
-    Real x388 = 0;
-    Real x389 = 0;
-    Real x390 = 0;
-    Real x391 = 0;
-    Real x392 = 0;
-    Real x393 = 0;
-    Real x394 = 0;
-    Real x395 = 0;
-    Real x396 = 0;
-    Real x397 = 0;
-    Real x398 = 0;
-    Real x399 = 0;
-    Real x400 = 0;
-    Real x401 = 0;
-    Real x402 = 0;
-    Real x403 = 0;
-    Real x404 = 0;
-    Real x405 = 0;
-    Real x406 = 0;
-    Real x407 = 0;
-    Real x408 = 0;
-    Real x409 = 0;
-    Real x410 = 0;
-    Real x411 = 0;
-    Real x412 = 0;
-    Real x413 = 0;
-    Real x414 = 0;
-    Real x415 = 0;
-    Real x416 = 0;
-    Real x417 = 0;
-    Real x418 = 0;
-    Real x419 = 0;
-    Real x420 = 0;
-    Real x421 = 0;
-    Real x422 = 0;
-    Real x423 = 0;
-    Real x424 = 0;
-    Real x425 = 0;
-    Real x426 = 0;
-    Real x427 = 0;
-    Real x428 = 0;
-    Real x429 = 0;
-    Real x430 = 0;
-    Real x431 = 0;
-    Real x432 = 0;
-    Real x433 = 0;
-    Real x434 = 0;
-    Real x435 = 0;
-    Real x436 = 0;
-    Real x437 = 0;
-    Real x438 = 0;
-    Real x439 = 0;
-    Real x440 = 0;
-    Real x441 = 0;
-    Real x442 = 0;
-    Real x443 = 0;
-    Real x444 = 0;
-    Real x445 = 0;
-    Real x446 = 0;
-    Real x447 = 0;
-    Real x448 = 0;
-    Real x449 = 0;
-    Real x450 = 0;
-    Real x451 = 0;
-    Real x452 = 0;
-    Real x453 = 0;
-    Real x454 = 0;
-    Real x455 = 0;
-    Real x456 = 0;
-    Real x457 = 0;
-    Real x458 = 0;
-    Real x459 = 0;
-    Real x460 = 0;
-    Real x461 = 0;
-    Real x462 = 0;
-    Real x463 = 0;
-    Real x464 = 0;
-    Real x465 = 0;
-    Real x466 = 0;
-    Real x467 = 0;
-    Real x468 = 0;
-    Real x469 = 0;
-    Real x470 = 0;
-    Real x471 = 0;
-    Real x472 = 0;
-    Real x473 = 0;
-    Real x474 = 0;
-    Real x475 = 0;
-    Real x476 = 0;
-    Real x477 = 0;
-    Real x478 = 0;
-    Real x479 = 0;
-    Real x480 = 0;
-    Real x481 = 0;
-    Real x482 = 0;
-    Real x483 = 0;
-    Real x484 = 0;
-    Real x485 = 0;
-    Real x486 = 0;
-    Real x487 = 0;
-    Real x488 = 0;
-    Real x489 = 0;
-    Real x490 = 0;
-    Real x491 = 0;
-    Real x492 = 0;
-    Real x493 = 0;
-    Real x494 = 0;
-    Real x495 = 0;
-    Real x496 = 0;
-    Real x497 = 0;
-    Real x498 = 0;
-    Real x499 = 0;
-    Real x500 = 0;
-    Real x501 = 0;
-    Real x502 = 0;
-    Real x503 = 0;
-    Real x504 = 0;
-    Real x505 = 0;
-    Real x506 = 0;
-    Real x507 = 0;
-    Real x508 = 0;
-    Real x509 = 0;
-    Real x510 = 0;
-    Real x511 = 0;
-    Real x512 = 0;
-    Real x513 = 0;
-    Real x514 = 0;
-    Real x515 = 0;
-    Real x516 = 0;
-    Real x517 = 0;
-    Real x518 = 0;
-    Real x519 = 0;
-    Real x520 = 0;
-    Real x521 = 0;
-    Real x522 = 0;
-    Real x523 = 0;
-    Real x524 = 0;
-    Real x525 = 0;
-    Real x526 = 0;
-    Real x527 = 0;
-    Real x528 = 0;
-    Real x529 = 0;
-    Real x530 = 0;
-    Real x531 = 0;
-    Real x532 = 0;
-    Real x533 = 0;
-    x0 = 2.5950363272655348e-10*std::exp((-0.75)*std::log(std::abs(T)));
+    Real x0;
+    Real x1;
+    Real x2;
+    Real x3;
+    Real x4;
+    Real x5;
+    Real x6;
+    Real x7;
+    Real x8;
+    Real x9;
+    Real x10;
+    Real x11;
+    Real x12;
+    Real x13;
+    Real x14;
+    Real x15;
+    Real x16;
+    Real x17;
+    Real x18;
+    Real x19;
+    Real x20;
+    Real x21;
+    Real x22;
+    Real x23;
+    Real x24;
+    Real x25;
+    Real x26;
+    Real x27;
+    Real x28;
+    Real x29;
+    Real x30;
+    Real x31;
+    Real x32;
+    Real x33;
+    Real x34;
+    Real x35;
+    Real x36;
+    Real x37;
+    Real x38;
+    Real x39;
+    Real x40;
+    Real x41;
+    Real x42;
+    Real x43;
+    Real x44;
+    Real x45;
+    Real x46;
+    Real x47;
+    Real x48;
+    Real x49;
+    Real x50;
+    Real x51;
+    Real x52;
+    Real x53;
+    Real x54;
+    Real x55;
+    Real x56;
+    Real x57;
+    Real x58;
+    Real x59;
+    Real x60;
+    Real x61;
+    Real x62;
+    Real x63;
+    Real x64;
+    Real x65;
+    Real x66;
+    Real x67;
+    Real x68;
+    Real x69;
+    Real x70;
+    Real x71;
+    Real x72;
+    Real x73;
+    Real x74;
+    Real x75;
+    Real x76;
+    Real x77;
+    Real x78;
+    Real x79;
+    Real x80;
+    Real x81;
+    Real x82;
+    Real x83;
+    Real x84;
+    Real x85;
+    Real x86;
+    Real x87;
+    Real x88;
+    Real x89;
+    Real x90;
+    Real x91;
+    Real x92;
+    Real x93;
+    Real x94;
+    Real x95;
+    Real x96;
+    Real x97;
+    Real x98;
+    Real x99;
+    Real x100;
+    Real x101;
+    Real x102;
+    Real x103;
+    Real x104;
+    Real x105;
+    Real x106;
+    Real x107;
+    Real x108;
+    Real x109;
+    Real x110;
+    Real x111;
+    Real x112;
+    Real x113;
+    Real x114;
+    Real x115;
+    Real x116;
+    Real x117;
+    Real x118;
+    Real x119;
+    Real x120;
+    Real x121;
+    Real x122;
+    Real x123;
+    Real x124;
+    Real x125;
+    Real x126;
+    Real x127;
+    Real x128;
+    Real x129;
+    Real x130;
+    Real x131;
+    Real x132;
+    Real x133;
+    Real x134;
+    Real x135;
+    Real x136;
+    Real x137;
+    Real x138;
+    Real x139;
+    Real x140;
+    Real x141;
+    Real x142;
+    Real x143;
+    Real x144;
+    Real x145;
+    Real x146;
+    Real x147;
+    Real x148;
+    Real x149;
+    Real x150;
+    Real x151;
+    Real x152;
+    Real x153;
+    Real x154;
+    Real x155;
+    Real x156;
+    Real x157;
+    Real x158;
+    Real x159;
+    Real x160;
+    Real x161;
+    Real x162;
+    Real x163;
+    Real x164;
+    Real x165;
+    Real x166;
+    Real x167;
+    Real x168;
+    Real x169;
+    Real x170;
+    Real x171;
+    Real x172;
+    Real x173;
+    Real x174;
+    Real x175;
+    Real x176;
+    Real x177;
+    Real x178;
+    Real x179;
+    Real x180;
+    Real x181;
+    Real x182;
+    Real x183;
+    Real x184;
+    Real x185;
+    Real x186;
+    Real x187;
+    Real x188;
+    Real x189;
+    Real x190;
+    Real x191;
+    Real x192;
+    Real x193;
+    Real x194;
+    Real x195;
+    Real x196;
+    Real x197;
+    Real x198;
+    Real x199;
+    Real x200;
+    Real x201;
+    Real x202;
+    Real x203;
+    Real x204;
+    Real x205;
+    Real x206;
+    Real x207;
+    Real x208;
+    Real x209;
+    Real x210;
+    Real x211;
+    Real x212;
+    Real x213;
+    Real x214;
+    Real x215;
+    Real x216;
+    Real x217;
+    Real x218;
+    Real x219;
+    Real x220;
+    Real x221;
+    Real x222;
+    Real x223;
+    Real x224;
+    Real x225;
+    Real x226;
+    Real x227;
+    Real x228;
+    Real x229;
+    Real x230;
+    Real x231;
+    Real x232;
+    Real x233;
+    Real x234;
+    Real x235;
+    Real x236;
+    Real x237;
+    Real x238;
+    Real x239;
+    Real x240;
+    Real x241;
+    Real x242;
+    Real x243;
+    Real x244;
+    Real x245;
+    Real x246;
+    Real x247;
+    Real x248;
+    Real x249;
+    Real x250;
+    Real x251;
+    Real x252;
+    Real x253;
+    Real x254;
+    Real x255;
+    Real x256;
+    Real x257;
+    Real x258;
+    Real x259;
+    Real x260;
+    Real x261;
+    Real x262;
+    Real x263;
+    Real x264;
+    Real x265;
+    Real x266;
+    Real x267;
+    Real x268;
+    Real x269;
+    Real x270;
+    Real x271;
+    Real x272;
+    Real x273;
+    Real x274;
+    Real x275;
+    Real x276;
+    Real x277;
+    Real x278;
+    Real x279;
+    Real x280;
+    Real x281;
+    Real x282;
+    Real x283;
+    Real x284;
+    Real x285;
+    Real x286;
+    Real x287;
+    Real x288;
+    Real x289;
+    Real x290;
+    Real x291;
+    Real x292;
+    Real x293;
+    Real x294;
+    Real x295;
+    Real x296;
+    Real x297;
+    Real x298;
+    Real x299;
+    Real x300;
+    Real x301;
+    Real x302;
+    Real x303;
+    Real x304;
+    Real x305;
+    Real x306;
+    Real x307;
+    Real x308;
+    Real x309;
+    Real x310;
+    Real x311;
+    Real x312;
+    Real x313;
+    Real x314;
+    Real x315;
+    Real x316;
+    Real x317;
+    Real x318;
+    Real x319;
+    Real x320;
+    Real x321;
+    Real x322;
+    Real x323;
+    Real x324;
+    Real x325;
+    Real x326;
+    Real x327;
+    Real x328;
+    Real x329;
+    Real x330;
+    Real x331;
+    Real x332;
+    Real x333;
+    Real x334;
+    Real x335;
+    Real x336;
+    Real x337;
+    Real x338;
+    Real x339;
+    Real x340;
+    Real x341;
+    Real x342;
+    Real x343;
+    Real x344;
+    Real x345;
+    Real x346;
+    Real x347;
+    Real x348;
+    Real x349;
+    Real x350;
+    Real x351;
+    Real x352;
+    Real x353;
+    Real x354;
+    Real x355;
+    Real x356;
+    Real x357;
+    Real x358;
+    Real x359;
+    Real x360;
+    Real x361;
+    Real x362;
+    Real x363;
+    Real x364;
+    Real x365;
+    Real x366;
+    Real x367;
+    Real x368;
+    Real x369;
+    Real x370;
+    Real x371;
+    Real x372;
+    Real x373;
+    Real x374;
+    Real x375;
+    Real x376;
+    Real x377;
+    Real x378;
+    Real x379;
+    Real x380;
+    Real x381;
+    Real x382;
+    Real x383;
+    Real x384;
+    Real x385;
+    Real x386;
+    Real x387;
+    Real x388;
+    Real x389;
+    Real x390;
+    Real x391;
+    Real x392;
+    Real x393;
+    Real x394;
+    Real x395;
+    Real x396;
+    Real x397;
+    Real x398;
+    Real x399;
+    Real x400;
+    Real x401;
+    Real x402;
+    Real x403;
+    Real x404;
+    Real x405;
+    Real x406;
+    Real x407;
+    Real x408;
+    Real x409;
+    Real x410;
+    Real x411;
+    Real x412;
+    Real x413;
+    Real x414;
+    Real x415;
+    Real x416;
+    Real x417;
+    Real x418;
+    Real x419;
+    Real x420;
+    Real x421;
+    Real x422;
+    Real x423;
+    Real x424;
+    Real x425;
+    Real x426;
+    Real x427;
+    Real x428;
+    Real x429;
+    Real x430;
+    Real x431;
+    Real x432;
+    Real x433;
+    Real x434;
+    Real x435;
+    Real x436;
+    Real x437;
+    Real x438;
+    Real x439;
+    Real x440;
+    Real x441;
+    Real x442;
+    Real x443;
+    Real x444;
+    Real x445;
+    Real x446;
+    Real x447;
+    Real x448;
+    Real x449;
+    Real x450;
+    Real x451;
+    Real x452;
+    Real x453;
+    Real x454;
+    Real x455;
+    Real x456;
+    Real x457;
+    Real x458;
+    Real x459;
+    Real x460;
+    Real x461;
+    Real x462;
+    Real x463;
+    Real x464;
+    Real x465;
+    Real x466;
+    Real x467;
+    Real x468;
+    Real x469;
+    Real x470;
+    Real x471;
+    Real x472;
+    Real x473;
+    Real x474;
+    Real x475;
+    Real x476;
+    Real x477;
+    Real x478;
+    Real x479;
+    Real x480;
+    Real x481;
+    Real x482;
+    Real x483;
+    Real x484;
+    Real x485;
+    Real x486;
+    Real x487;
+    Real x488;
+    Real x489;
+    Real x490;
+    Real x491;
+    Real x492;
+    Real x493;
+    Real x494;
+    Real x495;
+    Real x496;
+    Real x497;
+    Real x498;
+    Real x499;
+    Real x500;
+    Real x501;
+    Real x502;
+    Real x503;
+    Real x504;
+    Real x505;
+    Real x506;
+    Real x507;
+    Real x508;
+    Real x509;
+    Real x510;
+    Real x511;
+    Real x512;
+    Real x513;
+    Real x514;
+    Real x515;
+    Real x516;
+    Real x517;
+    Real x518;
+    Real x519;
+    Real x520;
+    Real x521;
+    Real x522;
+    Real x523;
+    Real x524;
+    Real x525;
+    Real x526;
+    Real x527;
+    Real x528;
+    Real x529;
+    Real x530;
+    Real x531;
+    Real x532;
+    Real x533;
+    x0 = 2.5950363272655348e-10*std::exp((-0.75)*log_abs_T);
 
-    x1 = std::sqrt(T);
+    x1 = sqrt_T;
 
     x2 = 1.0/x1;
 
@@ -2090,7 +2115,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x5 = X(2)*x4;
 
-    x6 = std::exp((0.92800000000000005)*std::log(std::abs(T)));
+    x6 = std::exp((0.92800000000000005)*log_abs_T);
 
     x7 = 1.4000000000000001e-18*x6;
 
@@ -2098,7 +2123,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x9 = X(5)*x8;
 
-    x10 = std::exp((0.94999999999999996)*std::log(std::abs(T)));
+    x10 = std::exp((0.94999999999999996)*log_abs_T);
 
     x11 = 1.3300135414628029e-18*x10;
 
@@ -2108,7 +2133,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x14 = X(8)*x13;
 
-    x15 = 35.5*std::exp((-2.2799999999999998)*std::log(std::abs(T)));
+    x15 = 35.5*std::exp((-2.2799999999999998)*log_abs_T);
 
     x16 = 0.00060040841663220993*x1 + 1.0;
 
@@ -2139,7 +2164,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
    0
 ));
 
-    x28 = 1.4981088130721367e-10*std::exp((-0.63529999999999998)*std::log(std::abs(T)));
+    x28 = 1.4981088130721367e-10*std::exp((-0.63529999999999998)*log_abs_T);
 
     x29 = 8.6173430000000006e-5*T;
 
@@ -2151,10 +2176,10 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
    x28
 )
 : (
-   1250086.112245841*std::exp((-1.5)*std::log(std::abs(T)))*x31 + x28
+   1250086.112245841*std::exp((-1.5)*log_abs_T)*x31 + x28
 ));
 
-    x33 = std::exp((2.360852208681)*std::log(std::abs(T)));
+    x33 = std::exp((2.360852208681)*log_abs_T);
 
     x34 = std::log(x29);
 
@@ -2174,21 +2199,21 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x42 = std::exp(-0.28274430617039997*x35 + 0.01623316639567*x36 - 0.033650120313629989*x37 + 0.01178329782711*x38 - 0.001656194699504*x39 + 0.0001068275202678*x40 - 2.6312858092069998e-6*x41);
 
-    x43 = std::exp((13.536555999999999)*std::log(std::abs(T)));
+    x43 = std::exp((13.536555999999999)*log_abs_T);
 
     x44 = std::exp(-5.7393287500000003*x35 + 1.56315498*x36 - 0.28770560000000001*x37 + 0.034825597700000002*x38 - 0.00263197617*x39 + 0.000111954395*x40 - 2.0391498499999999e-6*x41);
 
-    x45 = std::exp((23.915965629999999)*std::log(std::abs(T)));
+    x45 = std::exp((23.915965629999999)*log_abs_T);
 
     x46 = std::exp(-10.753230200000001*x35 + 3.0580387500000001*x36 - 0.56851189000000002*x37 + 0.067953912300000002*x38 - 0.0050090561*x39 + 0.000206723616*x40 - 3.6491614100000001e-6*x41);
 
-    x47 = std::exp((43.933476326349997)*std::log(std::abs(T)));
+    x47 = std::exp((43.933476326349997)*log_abs_T);
 
     x48 = std::exp(-18.480669935680002*x35 + 4.7016264867590021*x36 - 0.76924663344919997*x37 + 0.081130420973029999*x38 - 0.005324020628287001*x39 + 0.00019757053122209999*x40 - 3.1655810656650001e-6*x41);
 
     x49 = x29 <= 5500.0;
 
-    x50 = std::exp((-0.72411256578268512)*std::log(std::abs(T)));
+    x50 = std::exp((-0.72411256578268512)*log_abs_T);
 
     x51 = ((x34)*(x34)*(x34)*(x34)*(x34)*(x34)*(x34)*(x34)*(x34));
 
@@ -2201,15 +2226,15 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
    3.2867337024382687e-10*x50*x52
 ));
 
-    x54 = 1.0e-8*std::exp((-0.40000000000000002)*std::log(std::abs(T)));
+    x54 = 1.0e-8*std::exp((-0.40000000000000002)*log_abs_T);
 
-    x55 = 2.6534040307116387e-9*std::exp((-0.10000000000000001)*std::log(std::abs(T)));
+    x55 = 2.6534040307116387e-9*std::exp((-0.10000000000000001)*log_abs_T);
 
-    x56 = 0.0061910000000000003*std::exp((1.0461)*std::log(std::abs(T))) + 8.9711999999999997e-11*std::exp((3.0424000000000002)*std::log(std::abs(T))) + 3.2575999999999999e-14*std::exp((3.7740999999999998)*std::log(std::abs(T))) + 1.0;
+    x56 = 0.0061910000000000003*std::exp((1.0461)*log_abs_T) + 8.9711999999999997e-11*std::exp((3.0424000000000002)*log_abs_T) + 3.2575999999999999e-14*std::exp((3.7740999999999998)*log_abs_T) + 1.0;
 
     x57 = 1.0/x56;
 
-    x58 = 1.3500000000000001e-9*std::exp((0.098492999999999997)*std::log(std::abs(T))) + 4.4350199999999998e-10*std::exp((0.55610000000000004)*std::log(std::abs(T))) + 3.7408500000000004e-16*std::exp((2.1825999999999999)*std::log(std::abs(T)));
+    x58 = 1.3500000000000001e-9*std::exp((0.098492999999999997)*log_abs_T) + 4.4350199999999998e-10*std::exp((0.55610000000000004)*log_abs_T) + 3.7408500000000004e-16*std::exp((2.1825999999999999)*log_abs_T);
 
     x59 = x57*x58;
 
@@ -2219,10 +2244,10 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x62 = std::exp(-0.14210135215541481*x35 + 0.0084644553866299998*x36 - 0.0014327641212992001*x37 + 0.00020122502847909999*x38 + 8.6639632430900003e-5*x39 - 2.5850096802639999e-5*x40 + 2.4555011970391999e-6*x41 - 8.0683824611800006e-8*x51);
 
-    x63 = 3.3178155742407614e-14*std::exp((1.1394493358416311)*std::log(std::abs(T)))*x62;
+    x63 = 3.3178155742407614e-14*std::exp((1.1394493358416311)*log_abs_T)*x62;
 
     x64 = ((x61) ? (
-   1.4643482606109061e-16*std::exp((1.78186)*std::log(std::abs(T)))
+   1.4643482606109061e-16*std::exp((1.78186)*log_abs_T)
 )
 : (
    x63
@@ -2242,9 +2267,9 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x71 = 3.4767371836380304e-16*x69;
 
-    x72 = 2.6534040307116389e-10*std::exp((-1.1000000000000001)*std::log(std::abs(T)));
+    x72 = 2.6534040307116389e-10*std::exp((-1.1000000000000001)*log_abs_T);
 
-    x73 = X(0)/std::exp((3.0/2.0)*std::log(std::abs(T)));
+    x73 = X(0)/std::exp((3.0/2.0)*log_abs_T);
 
     x74 = X(0)*x5;
 
@@ -2262,9 +2287,9 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x81 = X(0)*X(12);
 
-    x82 = -9.5174852894472843e-11*std::exp((-1.6353)*std::log(std::abs(T)));
+    x82 = -9.5174852894472843e-11*std::exp((-1.6353)*log_abs_T);
 
-    x83 = std::exp((-3.5)*std::log(std::abs(T)));
+    x83 = std::exp((-3.5)*log_abs_T);
 
     x84 = x12*x34;
 
@@ -2318,27 +2343,27 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
     jac(1,14) = X(0)*x46*x68;
 
 
-    jac(1,15) = (-1658098.5*std::exp((-4.2799999999999994)*std::log(std::abs(T)))*x76 + 80.939999999999998*std::exp((-3.2799999999999998)*std::log(std::abs(T)))*x76 + 1.9462772454491511e-10*std::exp((-1.75)*std::log(std::abs(T)))*X(0)*X(4) - 4.0000000000000002e-9*std::exp((-1.3999999999999999)*std::log(std::abs(T)))*X(1)*X(3) - 1.2992000000000002e-18*std::exp((-0.071999999999999953)*std::log(std::abs(T)))*x74 - 1.2635128643896626e-18*std::exp((-0.050000000000000044)*std::log(std::abs(T)))*x75 + 8.9485740404797324e-18*std::exp((1.360852208681)*std::log(std::abs(T)))*X(0)*x78 + 7.997727392299023e-69*std::exp((12.536555999999999)*std::log(std::abs(T)))*X(0)*x79 + 1.0409203801861816e-115*std::exp((22.915965629999999)*std::log(std::abs(T)))*X(0)*x80 + 1.694596485110541e-207*std::exp((42.933476326349997)*std::log(std::abs(T)))*x48*x81 - X(0)*X(1)*((x49) ? (
+    jac(1,15) = (-1658098.5*std::exp((-4.2799999999999994)*log_abs_T)*x76 + 80.939999999999998*std::exp((-3.2799999999999998)*log_abs_T)*x76 + 1.9462772454491511e-10*std::exp((-1.75)*log_abs_T)*X(0)*X(4) - 4.0000000000000002e-9*std::exp((-1.3999999999999999)*log_abs_T)*X(1)*X(3) - 1.2992000000000002e-18*std::exp((-0.071999999999999953)*log_abs_T)*x74 - 1.2635128643896626e-18*std::exp((-0.050000000000000044)*log_abs_T)*x75 + 8.9485740404797324e-18*std::exp((1.360852208681)*log_abs_T)*X(0)*x78 + 7.997727392299023e-69*std::exp((12.536555999999999)*log_abs_T)*X(0)*x79 + 1.0409203801861816e-115*std::exp((22.915965629999999)*log_abs_T)*X(0)*x80 + 1.694596485110541e-207*std::exp((42.933476326349997)*log_abs_T)*x48*x81 - X(0)*X(1)*((x49) ? (
    x82
 )
 : (
-   -2.3799651743169991e-10*std::exp((-1.724112565782685)*std::log(std::abs(T)))*x52 + 3.2867337024382687e-10*x50*x52*(-0.0071425856320495021*x12*x35 - 7.1075145702705346e-5*x12*x37 + 2.9934653521797078e-5*x12*x38 + 4.0289298963030308e-6*x12*x39 - 0.04052089463969382*x84 - 0.0012850420852755183*x85 - 1.4854136318202087e-7*x87 - 2.7640217188769353e-8*x88)
+   -2.3799651743169991e-10*std::exp((-1.724112565782685)*log_abs_T)*x52 + 3.2867337024382687e-10*x50*x52*(-0.0071425856320495021*x12*x35 - 7.1075145702705346e-5*x12*x37 + 2.9934653521797078e-5*x12*x38 + 4.0289298963030308e-6*x12*x39 - 0.04052089463969382*x84 - 0.0012850420852755183*x85 - 1.4854136318202087e-7*x87 - 2.7640217188769353e-8*x88)
 )) - X(0)*X(6)*((x26) ? (
    1.4685599999999999e-14*T - 2.2642200000000001e-18*x23 + 1.3387199999999999e-22*x24 - 2.7639999999999999e-27*x25 - 2.3088e-11
 )
 : (
    0
-)) + 3.0451686126851684e-13*X(0)*x12*std::exp((-2.7523999999999997)*std::log(std::abs(x16)))*x20 + X(0)*x60*x79*(4.6894649399999997*x12*x35 + 0.1741279885*x12*x37 + 0.00078368076500000001*x12*x39 - 11.478657500000001*x84 - 1.1508224*x85 - 0.015791857020000001*x86 - 1.6313198799999999e-5*x87) + X(0)*x65*x78*(0.048699499187009998*x12*x35 + 0.058916489135550004*x12*x37 + 0.00074779264187460007*x12*x39 - 0.56548861234079995*x84 - 0.13460048125451995*x85 - 0.009937168197024001*x86 - 2.1050286473655998e-5*x87) + X(0)*x68*x80*(9.1741162500000009*x12*x35 + 0.33976956150000004*x12*x37 + 0.001447065312*x12*x39 - 21.506460400000002*x84 - 2.2740475600000001*x85 - 0.030054336600000002*x86 - 2.9193291280000001e-5*x87) + 2.3410580000000002e-11*X(11)*x12*std::exp((-1.2476)*std::log(std::abs(x18)))*x66 - X(2)*X(7)*x72 - X(3)*X(5)*x72 + 3.5999999999999998e-8*X(9)*x73 + 1.4270531560759686e-22*x10*x75 + 2.8942185892741411e-10*x21*x73 + x57*x77*(1.3296555000000001e-10*std::exp((-0.90150700000000006)*std::log(std::abs(T))) + 2.466314622e-10*std::exp((-0.44389999999999996)*std::log(std::abs(T))) + 8.1647792100000001e-16*std::exp((1.1825999999999999)*std::log(std::abs(T)))) + 8.6419753086419757e-23*x6*x74 + x67*x81*(14.104879460277006*x12*x35 + 0.40565210486515002*x12*x37 + 0.0013829937185547*x12*x39 - 36.961339871360003*x84 - 3.0769865337967999*x85 - 0.031944123769722006*x86 - 2.5324648525320001e-5*x87) + x77*((x61) ? (
-   2.6092635916521491e-16*std::exp((0.78186)*std::log(std::abs(T)))
+)) + 3.0451686126851684e-13*X(0)*x12*std::exp((-2.7523999999999997)*std::log(std::abs(x16)))*x20 + X(0)*x60*x79*(4.6894649399999997*x12*x35 + 0.1741279885*x12*x37 + 0.00078368076500000001*x12*x39 - 11.478657500000001*x84 - 1.1508224*x85 - 0.015791857020000001*x86 - 1.6313198799999999e-5*x87) + X(0)*x65*x78*(0.048699499187009998*x12*x35 + 0.058916489135550004*x12*x37 + 0.00074779264187460007*x12*x39 - 0.56548861234079995*x84 - 0.13460048125451995*x85 - 0.009937168197024001*x86 - 2.1050286473655998e-5*x87) + X(0)*x68*x80*(9.1741162500000009*x12*x35 + 0.33976956150000004*x12*x37 + 0.001447065312*x12*x39 - 21.506460400000002*x84 - 2.2740475600000001*x85 - 0.030054336600000002*x86 - 2.9193291280000001e-5*x87) + 2.3410580000000002e-11*X(11)*x12*std::exp((-1.2476)*std::log(std::abs(x18)))*x66 - X(2)*X(7)*x72 - X(3)*X(5)*x72 + 3.5999999999999998e-8*X(9)*x73 + 1.4270531560759686e-22*x10*x75 + 2.8942185892741411e-10*x21*x73 + x57*x77*(1.3296555000000001e-10*std::exp((-0.90150700000000006)*log_abs_T) + 2.466314622e-10*std::exp((-0.44389999999999996)*log_abs_T) + 8.1647792100000001e-16*std::exp((1.1825999999999999)*log_abs_T)) + 8.6419753086419757e-23*x6*x74 + x67*x81*(14.104879460277006*x12*x35 + 0.40565210486515002*x12*x37 + 0.0013829937185547*x12*x39 - 36.961339871360003*x84 - 3.0769865337967999*x85 - 0.031944123769722006*x86 - 2.5324648525320001e-5*x87) + x77*((x61) ? (
+   2.6092635916521491e-16*std::exp((0.78186)*log_abs_T)
 )
 : (
-   3.7804827525136553e-14*std::exp((0.13944933584163111)*std::log(std::abs(T)))*x62 + x63*(0.025393366159889998*x12*x35 + 0.0010061251423955*x12*x37 + 0.00051983779458540007*x12*x38 - 0.00018095067761848*x12*x39 + 1.9644009576313599e-5*x12*x40 - 0.28420270431082961*x84 - 0.0057310564851968003*x85 - 7.2615442150620009e-7*x88)
+   3.7804827525136553e-14*std::exp((0.13944933584163111)*log_abs_T)*x62 + x63*(0.025393366159889998*x12*x35 + 0.0010061251423955*x12*x37 + 0.00051983779458540007*x12*x38 - 0.00018095067761848*x12*x39 + 1.9644009576313599e-5*x12*x40 - 0.28420270431082961*x84 - 0.0057310564851968003*x85 - 7.2615442150620009e-7*x88)
 )) - x81*((x30) ? (
    x82
 )
 : (
-   -1875129.1683687614*std::exp((-2.5)*std::log(std::abs(T)))*x31 + 587469852277.90271*x31*x83 + x82 + 54.282214350476039*x83*std::exp(-563932.20901156683*x12)
-)) + x58*x77*(-0.0064764051000000007*std::exp((0.04610000000000003)*std::log(std::abs(T))) - 2.7293978880000002e-10*std::exp((2.0424000000000002)*std::log(std::abs(T))) - 1.229450816e-13*std::exp((2.7740999999999998)*std::log(std::abs(T))))/((x56)*(x56)))/(X(0)*x70 + X(1)*x70 + X(10)*x71 + X(11)*x70 + X(12)*x70 + X(13)*x70 + X(2)*x70 + X(3)*x70 + X(4)*x70 + X(5)*x70 + X(6)*x71 + X(7)*x70 + X(8)*x71 + X(9)*x71);
+   -1875129.1683687614*std::exp((-2.5)*log_abs_T)*x31 + 587469852277.90271*x31*x83 + x82 + 54.282214350476039*x83*std::exp(-563932.20901156683*x12)
+)) + x58*x77*(-0.0064764051000000007*std::exp((0.04610000000000003)*log_abs_T) - 2.7293978880000002e-10*std::exp((2.0424000000000002)*log_abs_T) - 1.229450816e-13*std::exp((2.7740999999999998)*log_abs_T))/((x56)*(x56)))/(X(0)*x70 + X(1)*x70 + X(10)*x71 + X(11)*x70 + X(12)*x70 + X(13)*x70 + X(2)*x70 + X(3)*x70 + X(4)*x70 + X(5)*x70 + X(6)*x71 + X(7)*x70 + X(8)*x71 + X(9)*x71);
 
 
     x0 = 8.6173430000000006e-5*T;
@@ -2361,26 +2386,26 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x9 = std::exp(-5.7393287500000003*x2 + 1.56315498*x3 - 0.28770560000000001*x4 + 0.034825597700000002*x5 - 0.00263197617*x6 + 0.000111954395*x7 - 2.0391498499999999e-6*x8);
 
-    x10 = std::exp((13.536555999999999)*std::log(std::abs(T)));
+    x10 = std::exp((13.536555999999999)*log_abs_T);
 
     x11 = 5.9082438637265071e-70*x10;
 
     x12 = x0 <= 5500.0;
 
-    x13 = std::exp((-0.72411256578268512)*std::log(std::abs(T)));
+    x13 = std::exp((-0.72411256578268512)*log_abs_T);
 
     x14 = std::exp(-3.0711352431965949e-9*((x1)*(x1)*(x1)*(x1)*(x1)*(x1)*(x1)*(x1)*(x1)) - 0.02026044731984691*x2 - 0.002380861877349834*x3 - 0.00032126052131887958*x4 - 1.421502914054107e-5*x5 + 4.9891089202995129e-6*x6 + 5.7556141375757583e-7*x7 - 1.8567670397752609e-8*x8);
 
     x15 = ((x12) ? (
-   1.4981088130721367e-10*std::exp((-0.63529999999999998)*std::log(std::abs(T)))
+   1.4981088130721367e-10*std::exp((-0.63529999999999998)*log_abs_T)
 )
 : (
    3.2867337024382687e-10*x13*x14
 ));
 
-    x16 = 7.9674337148168363e-7*std::exp((-0.5)*std::log(std::abs(T)));
+    x16 = 7.9674337148168363e-7*std::exp((-0.5)*log_abs_T);
 
-    x17 = 1.0e-8*std::exp((-0.40000000000000002)*std::log(std::abs(T)));
+    x17 = 1.0e-8*std::exp((-0.40000000000000002)*log_abs_T);
 
     x18 = 1.0/T;
 
@@ -2388,7 +2413,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x20 = 1.0000000000000001e-9*x19;
 
-    x21 = std::exp((-0.75)*std::log(std::abs(T)));
+    x21 = std::exp((-0.75)*log_abs_T);
 
     x22 = std::exp(-127500.0*x18);
 
@@ -2398,7 +2423,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
    1.26e-9*x21*x22
 )
 : (
-   4.0000000000000003e-37*std::exp((4.7400000000000002)*std::log(std::abs(T)))
+   4.0000000000000003e-37*std::exp((4.7400000000000002)*log_abs_T)
 ));
 
     x25 = std::exp(-37.100000000000001*x18);
@@ -2406,13 +2431,13 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
     x26 = T >= 50.0;
 
     x27 = ((x26) ? (
-   2.0000000000000001e-10*std::exp((0.40200000000000002)*std::log(std::abs(T)))*x25 - 3.3099999999999998e-17*std::exp((1.48)*std::log(std::abs(T)))
+   2.0000000000000001e-10*std::exp((0.40200000000000002)*log_abs_T)*x25 - 3.3099999999999998e-17*std::exp((1.48)*log_abs_T)
 )
 : (
    0
 ));
 
-    x28 = std::sqrt(T);
+    x28 = sqrt_T;
 
     x29 = 1.0/x28;
 
@@ -2456,7 +2481,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
     x46 = std::exp((-3.194*x35 - 0.2072*x42*x43 + 1.786*x44*x45 - 18.199999999999999)*std::log(std::abs(10)));
 
     x47 = ((x41) ? (
-   3.4977396723747635e-20*std::exp((-0.14999999999999999)*std::log(std::abs(T)))
+   3.4977396723747635e-20*std::exp((-0.14999999999999999)*log_abs_T)
 )
 : (
    x46
@@ -2481,12 +2506,12 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
    0
 ));
 
-    x55 = 2.8833736969617052e-16*std::exp((0.25)*std::log(std::abs(T)));
+    x55 = 2.8833736969617052e-16*std::exp((0.25)*log_abs_T);
 
     x56 = std::exp(-33.0*x18);
 
     x57 = ((x26) ? (
-   2.0299999999999998e-9*std::exp((-0.33200000000000002)*std::log(std::abs(T))) + 2.0600000000000001e-10*std::exp((0.39600000000000002)*std::log(std::abs(T)))*x56
+   2.0299999999999998e-9*std::exp((-0.33200000000000002)*log_abs_T) + 2.0600000000000001e-10*std::exp((0.39600000000000002)*log_abs_T)*x56
 )
 : (
    0
@@ -2500,7 +2525,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x61 = 3.4767371836380304e-16*x59;
 
-    x62 = std::exp((-2)*std::log(std::abs(T)));
+    x62 = std::exp((-2)*log_abs_T);
 
     x63 = x18*x32;
 
@@ -2556,28 +2581,28 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
     jac(2,14) = -X(1)*x24;
 
 
-    jac(2,15) = (3.9837168574084181e-7*std::exp((-1.5)*std::log(std::abs(T)))*X(1)*X(7) + 4.0000000000000002e-9*std::exp((-1.3999999999999999)*std::log(std::abs(T)))*X(1)*X(3) + 7.997727392299023e-69*std::exp((12.536555999999999)*std::log(std::abs(T)))*X(0)*X(2)*x9 - X(0)*X(1)*((x12) ? (
-   -9.5174852894472843e-11*std::exp((-1.6353)*std::log(std::abs(T)))
+    jac(2,15) = (3.9837168574084181e-7*std::exp((-1.5)*log_abs_T)*X(1)*X(7) + 4.0000000000000002e-9*std::exp((-1.3999999999999999)*log_abs_T)*X(1)*X(3) + 7.997727392299023e-69*std::exp((12.536555999999999)*log_abs_T)*X(0)*X(2)*x9 - X(0)*X(1)*((x12) ? (
+   -9.5174852894472843e-11*std::exp((-1.6353)*log_abs_T)
 )
 : (
-   -2.3799651743169991e-10*std::exp((-1.724112565782685)*std::log(std::abs(T)))*x14 + 3.2867337024382687e-10*x13*x14*(-0.0071425856320495021*x18*x2 - 7.1075145702705346e-5*x18*x4 + 2.9934653521797078e-5*x18*x5 + 4.0289298963030308e-6*x18*x6 - 2.7640217188769353e-8*x18*x8 - 0.04052089463969382*x66 - 0.0012850420852755183*x67 - 1.4854136318202087e-7*x68)
+   -2.3799651743169991e-10*std::exp((-1.724112565782685)*log_abs_T)*x14 + 3.2867337024382687e-10*x13*x14*(-0.0071425856320495021*x18*x2 - 7.1075145702705346e-5*x18*x4 + 2.9934653521797078e-5*x18*x5 + 4.0289298963030308e-6*x18*x6 - 2.7640217188769353e-8*x18*x8 - 0.04052089463969382*x66 - 0.0012850420852755183*x67 - 1.4854136318202087e-7*x68)
 )) + 5.9082438637265071e-70*X(0)*X(2)*x10*x9*(4.6894649399999997*x18*x2 + 0.1741279885*x18*x4 - 0.015791857020000001*x18*x5 + 0.00078368076500000001*x18*x6 - 11.478657500000001*x66 - 1.1508224*x67 - 1.6313198799999999e-5*x68) - 4.5700000000000003e-7*X(1)*X(10)*x19*x62 - X(1)*X(13)*((x23) ? (
-   0.00016065*std::exp((-2.75)*std::log(std::abs(T)))*x22 - 9.4499999999999994e-10*std::exp((-1.75)*std::log(std::abs(T)))*x22
+   0.00016065*std::exp((-2.75)*log_abs_T)*x22 - 9.4499999999999994e-10*std::exp((-1.75)*log_abs_T)*x22
 )
 : (
-   1.8960000000000001e-36*std::exp((3.7400000000000002)*std::log(std::abs(T)))
+   1.8960000000000001e-36*std::exp((3.7400000000000002)*log_abs_T)
 )) - X(1)*X(2)*((x41) ? (
-   -5.2466095085621454e-21*std::exp((-1.1499999999999999)*std::log(std::abs(T)))
+   -5.2466095085621454e-21*std::exp((-1.1499999999999999)*log_abs_T)
 )
 : (
    x33*x46*(3.5720000000000001*x18*x32*x44 - 0.62159999999999993*x42*x65 - 3.194*x64)
 )) - X(1)*X(3)*((x30) ? (
-   1.2500000000000001e-10*x29 - 7.7700000000000002e-13 - 1.48e-6/std::exp((3.0/2.0)*std::log(std::abs(T)))
+   1.2500000000000001e-10*x29 - 7.7700000000000002e-13 - 1.48e-6/std::exp((3.0/2.0)*log_abs_T)
 )
 : (
    0
 )) - X(1)*X(5)*((x26) ? (
-   7.4200000000000004e-9*std::exp((-1.5979999999999999)*std::log(std::abs(T)))*x25 + 8.0400000000000002e-11*std::exp((-0.59799999999999998)*std::log(std::abs(T)))*x25 - 4.8987999999999998e-17*std::exp((0.47999999999999998)*std::log(std::abs(T)))
+   7.4200000000000004e-9*std::exp((-1.5979999999999999)*log_abs_T)*x25 + 8.0400000000000002e-11*std::exp((-0.59799999999999998)*log_abs_T)*x25 - 4.8987999999999998e-17*std::exp((0.47999999999999998)*log_abs_T)
 )
 : (
    0
@@ -2587,14 +2612,14 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 : (
    0
 )) - X(1)*x40*(5.1485802679346868*x18*std::exp((1.0)*std::log(std::abs(x32)))*x37 - 0.87659414490283338*x18*x36*x38 - 3.5068370966299316*x64) + 7.2084342424042629e-17*X(12)*X(2)*x21 + X(2)*X(4)*((x26) ? (
-   6.7980000000000007e-9*std::exp((-1.6040000000000001)*std::log(std::abs(T)))*x56 - 6.7396000000000002e-10*std::exp((-1.3320000000000001)*std::log(std::abs(T))) + 8.1576000000000009e-11*std::exp((-0.60399999999999998)*std::log(std::abs(T)))*x56
+   6.7980000000000007e-9*std::exp((-1.6040000000000001)*log_abs_T)*x56 - 6.7396000000000002e-10*std::exp((-1.3320000000000001)*log_abs_T) + 8.1576000000000009e-11*std::exp((-0.60399999999999998)*log_abs_T)*x56
 )
 : (
    0
 )) + X(4)*X(8)*(8.4600000000000008e-10*x18*x34 - 2.7400000000000004e-10*x44*x63))/(X(0)*x60 + X(1)*x60 + X(10)*x61 + X(11)*x60 + X(12)*x60 + X(13)*x60 + X(2)*x60 + X(3)*x60 + X(4)*x60 + X(5)*x60 + X(6)*x61 + X(7)*x60 + X(8)*x61 + X(9)*x61);
 
 
-    x0 = std::sqrt(T);
+    x0 = sqrt_T;
 
     x1 = 1.0/x0;
 
@@ -2604,7 +2629,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x4 = X(2)*x3;
 
-    x5 = std::exp((0.92800000000000005)*std::log(std::abs(T)));
+    x5 = std::exp((0.92800000000000005)*log_abs_T);
 
     x6 = 1.4000000000000001e-18*x5;
 
@@ -2614,13 +2639,13 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x9 = X(8)*x8;
 
-    x10 = 35.5*std::exp((-2.2799999999999998)*std::log(std::abs(T)));
+    x10 = 35.5*std::exp((-2.2799999999999998)*log_abs_T);
 
     x11 = std::exp(-102000.0*x7);
 
     x12 = X(8)*x11;
 
-    x13 = 8.7599999999999997e-10*std::exp((0.34999999999999998)*std::log(std::abs(T)));
+    x13 = 8.7599999999999997e-10*std::exp((0.34999999999999998)*log_abs_T);
 
     x14 = ((T)*(T));
 
@@ -2659,7 +2684,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x29 = X(3)*x28;
 
-    x30 = 3.7903999274394518e-18*std::exp((2.360852208681)*std::log(std::abs(T)));
+    x30 = 3.7903999274394518e-18*std::exp((2.360852208681)*log_abs_T);
 
     x31 = x29*x30;
 
@@ -2667,26 +2692,26 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x33 = X(2)*x32;
 
-    x34 = 5.9082438637265071e-70*std::exp((13.536555999999999)*std::log(std::abs(T)));
+    x34 = 5.9082438637265071e-70*std::exp((13.536555999999999)*log_abs_T);
 
     x35 = x33*x34;
 
     x36 = x19 <= 5500.0;
 
-    x37 = std::exp((-0.72411256578268512)*std::log(std::abs(T)));
+    x37 = std::exp((-0.72411256578268512)*log_abs_T);
 
     x38 = ((x20)*(x20)*(x20)*(x20)*(x20)*(x20)*(x20)*(x20)*(x20));
 
     x39 = std::exp(-0.02026044731984691*x21 - 0.002380861877349834*x22 - 0.00032126052131887958*x23 - 1.421502914054107e-5*x24 + 4.9891089202995129e-6*x25 + 5.7556141375757583e-7*x26 - 1.8567670397752609e-8*x27 - 3.0711352431965949e-9*x38);
 
     x40 = ((x36) ? (
-   1.4981088130721367e-10*std::exp((-0.63529999999999998)*std::log(std::abs(T)))
+   1.4981088130721367e-10*std::exp((-0.63529999999999998)*log_abs_T)
 )
 : (
    3.2867337024382687e-10*x37*x39
 ));
 
-    x41 = std::exp((-0.75)*std::log(std::abs(T)));
+    x41 = std::exp((-0.75)*log_abs_T);
 
     x42 = std::exp(-127500.0*x7);
 
@@ -2694,7 +2719,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
    1.26e-9*x41*x42
 )
 : (
-   4.0000000000000003e-37*std::exp((4.7400000000000002)*std::log(std::abs(T)))
+   4.0000000000000003e-37*std::exp((4.7400000000000002)*log_abs_T)
 ));
 
     x44 = std::exp(-37.100000000000001*x7);
@@ -2702,7 +2727,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
     x45 = T >= 50.0;
 
     x46 = ((x45) ? (
-   2.0000000000000001e-10*std::exp((0.40200000000000002)*std::log(std::abs(T)))*x44 - 3.3099999999999998e-17*std::exp((1.48)*std::log(std::abs(T)))
+   2.0000000000000001e-10*std::exp((0.40200000000000002)*log_abs_T)*x44 - 3.3099999999999998e-17*std::exp((1.48)*log_abs_T)
 )
 : (
    0
@@ -2750,7 +2775,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
     x64 = std::exp((1.786*x49*x63 - 3.194*x60 - 0.2072*x62 - 18.199999999999999)*std::log(std::abs(10)));
 
     x65 = ((x57) ? (
-   3.4977396723747635e-20*std::exp((-0.14999999999999999)*std::log(std::abs(T)))
+   3.4977396723747635e-20*std::exp((-0.14999999999999999)*log_abs_T)
 )
 : (
    x64
@@ -2765,7 +2790,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
    0
 ));
 
-    x68 = std::sqrt(T);
+    x68 = sqrt_T;
 
     x69 = 1.0/x68;
 
@@ -2953,13 +2978,13 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x161 = x133*x134 + x134*x135 + x147*x158 - x160;
 
-    x162 = 2.6534040307116387e-9*std::exp((-0.10000000000000001)*std::log(std::abs(T)));
+    x162 = 2.6534040307116387e-9*std::exp((-0.10000000000000001)*log_abs_T);
 
-    x163 = std::exp((0.25)*std::log(std::abs(T)));
+    x163 = std::exp((0.25)*log_abs_T);
 
     x164 = 2.8833736969617052e-16*x163;
 
-    x165 = 6.1739095063118665e-10*std::exp((0.40999999999999998)*std::log(std::abs(T)));
+    x165 = 6.1739095063118665e-10*std::exp((0.40999999999999998)*log_abs_T);
 
     x166 = 1.0/x163;
 
@@ -2983,7 +3008,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
     x173 = std::exp(-33.0*x7);
 
     x174 = ((x45) ? (
-   2.0299999999999998e-9*std::exp((-0.33200000000000002)*std::log(std::abs(T))) + 2.0600000000000001e-10*std::exp((0.39600000000000002)*std::log(std::abs(T)))*x173
+   2.0299999999999998e-9*std::exp((-0.33200000000000002)*log_abs_T) + 2.0600000000000001e-10*std::exp((0.39600000000000002)*log_abs_T)*x173
 )
 : (
    0
@@ -2999,11 +3024,11 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x179 = X(4)*x178;
 
-    x180 = 0.0061910000000000003*std::exp((1.0461)*std::log(std::abs(T))) + 8.9711999999999997e-11*std::exp((3.0424000000000002)*std::log(std::abs(T))) + 3.2575999999999999e-14*std::exp((3.7740999999999998)*std::log(std::abs(T))) + 1.0;
+    x180 = 0.0061910000000000003*std::exp((1.0461)*log_abs_T) + 8.9711999999999997e-11*std::exp((3.0424000000000002)*log_abs_T) + 3.2575999999999999e-14*std::exp((3.7740999999999998)*log_abs_T) + 1.0;
 
     x181 = 1.0/x180;
 
-    x182 = 1.3500000000000001e-9*std::exp((0.098492999999999997)*std::log(std::abs(T))) + 4.4350199999999998e-10*std::exp((0.55610000000000004)*std::log(std::abs(T))) + 3.7408500000000004e-16*std::exp((2.1825999999999999)*std::log(std::abs(T)));
+    x182 = 1.3500000000000001e-9*std::exp((0.098492999999999997)*log_abs_T) + 4.4350199999999998e-10*std::exp((0.55610000000000004)*log_abs_T) + 3.7408500000000004e-16*std::exp((2.1825999999999999)*log_abs_T);
 
     x183 = x181*x182;
 
@@ -3011,10 +3036,10 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x185 = std::exp(-0.14210135215541481*x21 + 0.0084644553866299998*x22 - 0.0014327641212992001*x23 + 0.00020122502847909999*x24 + 8.6639632430900003e-5*x25 - 2.5850096802639999e-5*x26 + 2.4555011970391999e-6*x27 - 8.0683824611800006e-8*x38);
 
-    x186 = 3.3178155742407614e-14*std::exp((1.1394493358416311)*std::log(std::abs(T)))*x185;
+    x186 = 3.3178155742407614e-14*std::exp((1.1394493358416311)*log_abs_T)*x185;
 
     x187 = ((x184) ? (
-   1.4643482606109061e-16*std::exp((1.78186)*std::log(std::abs(T)))
+   1.4643482606109061e-16*std::exp((1.78186)*log_abs_T)
 )
 : (
    x186
@@ -3061,13 +3086,13 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x205 = 3.4767371836380304e-16*x203;
 
-    x206 = std::exp((-1.5)*std::log(std::abs(T)));
+    x206 = std::exp((-1.5)*log_abs_T);
 
     x207 = X(2)*X(7);
 
-    x208 = 2.5313028975878652e-10*std::exp((-0.59000000000000008)*std::log(std::abs(T)));
+    x208 = 2.5313028975878652e-10*std::exp((-0.59000000000000008)*log_abs_T);
 
-    x209 = std::exp((-3.0/2.0)*std::log(std::abs(T)));
+    x209 = std::exp((-3.0/2.0)*log_abs_T);
 
     x210 = X(0)*x4;
 
@@ -3077,7 +3102,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x213 = ((X(2))*(X(2))*(X(2)));
 
-    x214 = std::exp((-1.25)*std::log(std::abs(T)));
+    x214 = std::exp((-1.25)*log_abs_T);
 
     x215 = X(2)*X(3);
 
@@ -3109,7 +3134,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x229 = 2*x156;
 
-    x230 = std::exp((-2.5)*std::log(std::abs(T)));
+    x230 = std::exp((-2.5)*log_abs_T);
 
     x231 = x169*x59;
 
@@ -3171,23 +3196,23 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
     jac(3,14) = X(1)*x43;
 
 
-    jac(3,15) = (1658098.5*std::exp((-4.2799999999999994)*std::log(std::abs(T)))*x211 - 80.939999999999998*std::exp((-3.2799999999999998)*std::log(std::abs(T)))*x211 + 8.9351999999999994e-5*std::exp((-1.6499999999999999)*std::log(std::abs(T)))*x212 + 2.6534040307116389e-10*std::exp((-1.1000000000000001)*std::log(std::abs(T)))*x207 + 3.0659999999999995e-10*std::exp((-0.65000000000000002)*std::log(std::abs(T)))*x212 - 1.2992000000000002e-18*std::exp((-0.071999999999999953)*std::log(std::abs(T)))*x210 + 8.9485740404797324e-18*std::exp((1.360852208681)*std::log(std::abs(T)))*X(0)*x29 - 7.997727392299023e-69*std::exp((12.536555999999999)*std::log(std::abs(T)))*X(0)*x33 + X(0)*X(1)*((x36) ? (
-   -9.5174852894472843e-11*std::exp((-1.6353)*std::log(std::abs(T)))
+    jac(3,15) = (1658098.5*std::exp((-4.2799999999999994)*log_abs_T)*x211 - 80.939999999999998*std::exp((-3.2799999999999998)*log_abs_T)*x211 + 8.9351999999999994e-5*std::exp((-1.6499999999999999)*log_abs_T)*x212 + 2.6534040307116389e-10*std::exp((-1.1000000000000001)*log_abs_T)*x207 + 3.0659999999999995e-10*std::exp((-0.65000000000000002)*log_abs_T)*x212 - 1.2992000000000002e-18*std::exp((-0.071999999999999953)*log_abs_T)*x210 + 8.9485740404797324e-18*std::exp((1.360852208681)*log_abs_T)*X(0)*x29 - 7.997727392299023e-69*std::exp((12.536555999999999)*log_abs_T)*X(0)*x33 + X(0)*X(1)*((x36) ? (
+   -9.5174852894472843e-11*std::exp((-1.6353)*log_abs_T)
 )
 : (
-   -2.3799651743169991e-10*std::exp((-1.724112565782685)*std::log(std::abs(T)))*x39 + 3.2867337024382687e-10*x37*x39*(-0.0071425856320495021*x21*x7 - 0.04052089463969382*x222 - 0.0012850420852755183*x223 - 1.4854136318202087e-7*x225 - 2.7640217188769353e-8*x227 - 7.1075145702705346e-5*x23*x7 + 2.9934653521797078e-5*x24*x7 + 4.0289298963030308e-6*x25*x7)
+   -2.3799651743169991e-10*std::exp((-1.724112565782685)*log_abs_T)*x39 + 3.2867337024382687e-10*x37*x39*(-0.0071425856320495021*x21*x7 - 0.04052089463969382*x222 - 0.0012850420852755183*x223 - 1.4854136318202087e-7*x225 - 2.7640217188769353e-8*x227 - 7.1075145702705346e-5*x23*x7 + 2.9934653521797078e-5*x24*x7 + 4.0289298963030308e-6*x25*x7)
 )) + 2*X(0)*X(6)*((x17) ? (
    1.4685599999999999e-14*T - 2.2642200000000001e-18*x14 + 1.3387199999999999e-22*x15 - 2.7639999999999999e-27*x16 - 2.3088e-11
 )
 : (
    0
 )) - 3.5999999999999998e-8*X(0)*X(9)*x209 + X(0)*x31*(0.048699499187009998*x21*x7 - 0.56548861234079995*x222 - 0.13460048125451995*x223 - 0.009937168197024001*x224 - 2.1050286473655998e-5*x225 + 0.058916489135550004*x23*x7 + 0.00074779264187460007*x25*x7) - X(0)*x35*(4.6894649399999997*x21*x7 - 11.478657500000001*x222 - 1.1508224*x223 - 0.015791857020000001*x224 - 1.6313198799999999e-5*x225 + 0.1741279885*x23*x7 + 0.00078368076500000001*x25*x7) + X(1)*X(13)*((x17) ? (
-   0.00016065*std::exp((-2.75)*std::log(std::abs(T)))*x42 - 9.4499999999999994e-10*std::exp((-1.75)*std::log(std::abs(T)))*x42
+   0.00016065*std::exp((-2.75)*log_abs_T)*x42 - 9.4499999999999994e-10*std::exp((-1.75)*log_abs_T)*x42
 )
 : (
-   1.8960000000000001e-36*std::exp((3.7400000000000002)*std::log(std::abs(T)))
+   1.8960000000000001e-36*std::exp((3.7400000000000002)*log_abs_T)
 )) - X(1)*X(2)*((x57) ? (
-   -5.2466095085621454e-21*std::exp((-1.1499999999999999)*std::log(std::abs(T)))
+   -5.2466095085621454e-21*std::exp((-1.1499999999999999)*log_abs_T)
 )
 : (
    x58*x64*(-3.194*x216 - 0.62159999999999993*x218 + 3.5720000000000001*x48*x63*x7)
@@ -3197,7 +3222,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 : (
    0
 )) + X(1)*X(5)*((x45) ? (
-   7.4200000000000004e-9*std::exp((-1.5979999999999999)*std::log(std::abs(T)))*x44 + 8.0400000000000002e-11*std::exp((-0.59799999999999998)*std::log(std::abs(T)))*x44 - 4.8987999999999998e-17*std::exp((0.47999999999999998)*std::log(std::abs(T)))
+   7.4200000000000004e-9*std::exp((-1.5979999999999999)*log_abs_T)*x44 + 8.0400000000000002e-11*std::exp((-0.59799999999999998)*log_abs_T)*x44 - 4.8987999999999998e-17*std::exp((0.47999999999999998)*log_abs_T)
 )
 : (
    0
@@ -3212,7 +3237,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 : (
    0
 )) - 7.2084342424042629e-17*X(12)*X(2)*x41 - X(2)*X(4)*((x45) ? (
-   6.7980000000000007e-9*std::exp((-1.6040000000000001)*std::log(std::abs(T)))*x173 - 6.7396000000000002e-10*std::exp((-1.3320000000000001)*std::log(std::abs(T))) + 8.1576000000000009e-11*std::exp((-0.60399999999999998)*std::log(std::abs(T)))*x173
+   6.7980000000000007e-9*std::exp((-1.6040000000000001)*log_abs_T)*x173 - 6.7396000000000002e-10*std::exp((-1.3320000000000001)*log_abs_T) + 8.1576000000000009e-11*std::exp((-0.60399999999999998)*log_abs_T)*x173
 )
 : (
    0
@@ -3221,19 +3246,19 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 )
 : (
    1.650619e-6*x169*x197
-)) + X(8)*x168*(2.5000000000000002e-32*x206 + 3.75e-33*x214) + x134*(-x122*x239 - x235*x92) + x134*(x189*x235 + x190*x239) - x181*x215*(1.3296555000000001e-10*std::exp((-0.90150700000000006)*std::log(std::abs(T))) + 2.466314622e-10*std::exp((-0.44389999999999996)*std::log(std::abs(T))) + 8.1647792100000001e-16*std::exp((1.1825999999999999)*std::log(std::abs(T)))) - x207*x208 + 8.6419753086419757e-23*x210*x5 + x213*(-1.0000000000000001e-31*x206 - 1.5e-32*x214) + x213*(3.0000000000000003e-31*x206 + 4.5e-32*x214) + x215*((x184) ? (
-   2.6092635916521491e-16*std::exp((0.78186)*std::log(std::abs(T)))
+)) + X(8)*x168*(2.5000000000000002e-32*x206 + 3.75e-33*x214) + x134*(-x122*x239 - x235*x92) + x134*(x189*x235 + x190*x239) - x181*x215*(1.3296555000000001e-10*std::exp((-0.90150700000000006)*log_abs_T) + 2.466314622e-10*std::exp((-0.44389999999999996)*log_abs_T) + 8.1647792100000001e-16*std::exp((1.1825999999999999)*log_abs_T)) - x207*x208 + 8.6419753086419757e-23*x210*x5 + x213*(-1.0000000000000001e-31*x206 - 1.5e-32*x214) + x213*(3.0000000000000003e-31*x206 + 4.5e-32*x214) + x215*((x184) ? (
+   2.6092635916521491e-16*std::exp((0.78186)*log_abs_T)
 )
 : (
-   3.7804827525136553e-14*std::exp((0.13944933584163111)*std::log(std::abs(T)))*x185 + x186*(0.025393366159889998*x21*x7 - 0.28420270431082961*x222 - 0.0057310564851968003*x223 - 7.2615442150620009e-7*x227 + 0.0010061251423955*x23*x7 + 0.00051983779458540007*x24*x7 - 0.00018095067761848*x25*x7 + 1.9644009576313599e-5*x26*x7)
-)) + x229*(x147*x228 + 12307692.307692308*x153*x68*(0.0042250000000000005*x141*x143*x230 - 4.0625000000000001e-8*x144*x206 - 0.00048750000000000003*x230*std::exp(-58000.0*x7))*std::exp(x142)/x141) + x229*(69500.0*x150*x169 - x159*x228) - x182*x215*(-0.0064764051000000007*std::exp((0.04610000000000003)*std::log(std::abs(T))) - 2.7293978880000002e-10*std::exp((2.0424000000000002)*std::log(std::abs(T))) - 1.229450816e-13*std::exp((2.7740999999999998)*std::log(std::abs(T))))/((x180)*(x180)))/(X(0)*x204 + X(1)*x204 + X(10)*x205 + X(11)*x204 + X(12)*x204 + X(13)*x204 + X(2)*x204 + X(3)*x204 + X(4)*x204 + X(5)*x204 + X(6)*x205 + X(7)*x204 + X(8)*x205 + X(9)*x205);
+   3.7804827525136553e-14*std::exp((0.13944933584163111)*log_abs_T)*x185 + x186*(0.025393366159889998*x21*x7 - 0.28420270431082961*x222 - 0.0057310564851968003*x223 - 7.2615442150620009e-7*x227 + 0.0010061251423955*x23*x7 + 0.00051983779458540007*x24*x7 - 0.00018095067761848*x25*x7 + 1.9644009576313599e-5*x26*x7)
+)) + x229*(x147*x228 + 12307692.307692308*x153*x68*(0.0042250000000000005*x141*x143*x230 - 4.0625000000000001e-8*x144*x206 - 0.00048750000000000003*x230*std::exp(-58000.0*x7))*std::exp(x142)/x141) + x229*(69500.0*x150*x169 - x159*x228) - x182*x215*(-0.0064764051000000007*std::exp((0.04610000000000003)*log_abs_T) - 2.7293978880000002e-10*std::exp((2.0424000000000002)*log_abs_T) - 1.229450816e-13*std::exp((2.7740999999999998)*log_abs_T))/((x180)*(x180)))/(X(0)*x204 + X(1)*x204 + X(10)*x205 + X(11)*x204 + X(12)*x204 + X(13)*x204 + X(2)*x204 + X(3)*x204 + X(4)*x204 + X(5)*x204 + X(6)*x205 + X(7)*x204 + X(8)*x205 + X(9)*x205);
 
 
     x0 = std::exp(-6.1728395061728397e-5*T);
 
     x1 = X(2)*x0;
 
-    x2 = std::exp((0.92800000000000005)*std::log(std::abs(T)));
+    x2 = std::exp((0.92800000000000005)*log_abs_T);
 
     x3 = 1.4000000000000001e-18*x2;
 
@@ -3243,7 +3268,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x6 = X(8)*x5;
 
-    x7 = 35.5*std::exp((-2.2799999999999998)*std::log(std::abs(T)));
+    x7 = 35.5*std::exp((-2.2799999999999998)*log_abs_T);
 
     x8 = std::log(8.6173430000000006e-5*T);
 
@@ -3265,13 +3290,13 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x17 = X(3)*x16;
 
-    x18 = 3.7903999274394518e-18*std::exp((2.360852208681)*std::log(std::abs(T)));
+    x18 = 3.7903999274394518e-18*std::exp((2.360852208681)*log_abs_T);
 
     x19 = x17*x18;
 
-    x20 = 1.0e-8*std::exp((-0.40000000000000002)*std::log(std::abs(T)));
+    x20 = 1.0e-8*std::exp((-0.40000000000000002)*log_abs_T);
 
-    x21 = std::sqrt(T);
+    x21 = sqrt_T;
 
     x22 = 1.0/x21;
 
@@ -3284,13 +3309,13 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
    0
 ));
 
-    x25 = 6.1739095063118665e-10*std::exp((0.40999999999999998)*std::log(std::abs(T)));
+    x25 = 6.1739095063118665e-10*std::exp((0.40999999999999998)*log_abs_T);
 
-    x26 = 0.0061910000000000003*std::exp((1.0461)*std::log(std::abs(T))) + 8.9711999999999997e-11*std::exp((3.0424000000000002)*std::log(std::abs(T))) + 3.2575999999999999e-14*std::exp((3.7740999999999998)*std::log(std::abs(T))) + 1.0;
+    x26 = 0.0061910000000000003*std::exp((1.0461)*log_abs_T) + 8.9711999999999997e-11*std::exp((3.0424000000000002)*log_abs_T) + 3.2575999999999999e-14*std::exp((3.7740999999999998)*log_abs_T) + 1.0;
 
     x27 = 1.0/x26;
 
-    x28 = 1.3500000000000001e-9*std::exp((0.098492999999999997)*std::log(std::abs(T))) + 4.4350199999999998e-10*std::exp((0.55610000000000004)*std::log(std::abs(T))) + 3.7408500000000004e-16*std::exp((2.1825999999999999)*std::log(std::abs(T)));
+    x28 = 1.3500000000000001e-9*std::exp((0.098492999999999997)*log_abs_T) + 4.4350199999999998e-10*std::exp((0.55610000000000004)*log_abs_T) + 3.7408500000000004e-16*std::exp((2.1825999999999999)*log_abs_T);
 
     x29 = x27*x28;
 
@@ -3298,16 +3323,16 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x31 = std::exp(0.0084644553866299998*x10 - 0.0014327641212992001*x11 + 0.00020122502847909999*x12 + 8.6639632430900003e-5*x13 - 2.5850096802639999e-5*x14 + 2.4555011970391999e-6*x15 - 8.0683824611800006e-8*((x8)*(x8)*(x8)*(x8)*(x8)*(x8)*(x8)*(x8)*(x8)) - 0.14210135215541481*x9);
 
-    x32 = 3.3178155742407614e-14*std::exp((1.1394493358416311)*std::log(std::abs(T)))*x31;
+    x32 = 3.3178155742407614e-14*std::exp((1.1394493358416311)*log_abs_T)*x31;
 
     x33 = ((x30) ? (
-   1.4643482606109061e-16*std::exp((1.78186)*std::log(std::abs(T)))
+   1.4643482606109061e-16*std::exp((1.78186)*log_abs_T)
 )
 : (
    x32
 ));
 
-    x34 = 2.6534040307116387e-9*std::exp((-0.10000000000000001)*std::log(std::abs(T)));
+    x34 = 2.6534040307116387e-9*std::exp((-0.10000000000000001)*log_abs_T);
 
     x35 = 4.9999999999999996e-6*x22;
 
@@ -3317,9 +3342,9 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x38 = 3.4767371836380304e-16*x36;
 
-    x39 = std::exp((-0.59000000000000008)*std::log(std::abs(T)));
+    x39 = std::exp((-0.59000000000000008)*log_abs_T);
 
-    x40 = std::exp((-3.0/2.0)*std::log(std::abs(T)));
+    x40 = std::exp((-3.0/2.0)*log_abs_T);
 
     x41 = X(2)*X(3);
 
@@ -3369,20 +3394,20 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
     jac(4,14) = 0;
 
 
-    jac(4,15) = (1658098.5*std::exp((-4.2799999999999994)*std::log(std::abs(T)))*X(0)*X(8)*x5 - 80.939999999999998*std::exp((-3.2799999999999998)*std::log(std::abs(T)))*X(0)*x6 + 4.0000000000000002e-9*std::exp((-1.3999999999999999)*std::log(std::abs(T)))*X(1)*X(3) + 2.6534040307116389e-10*std::exp((-1.1000000000000001)*std::log(std::abs(T)))*X(3)*X(5) + 1.2992000000000002e-18*std::exp((-0.071999999999999953)*std::log(std::abs(T)))*X(0)*X(2)*x0 - 8.9485740404797324e-18*std::exp((1.360852208681)*std::log(std::abs(T)))*X(0)*x17 - 8.6419753086419757e-23*X(0)*x1*x2 - X(0)*x19*(0.058916489135550004*x11*x4 - 0.009937168197024001*x12*x4 + 0.00074779264187460007*x13*x4 - 2.1050286473655998e-5*x14*x4 + 0.048699499187009998*x4*x9 - 0.56548861234079995*x42 - 0.13460048125451995*x43) - X(1)*X(3)*((x23) ? (
+    jac(4,15) = (1658098.5*std::exp((-4.2799999999999994)*log_abs_T)*X(0)*X(8)*x5 - 80.939999999999998*std::exp((-3.2799999999999998)*log_abs_T)*X(0)*x6 + 4.0000000000000002e-9*std::exp((-1.3999999999999999)*log_abs_T)*X(1)*X(3) + 2.6534040307116389e-10*std::exp((-1.1000000000000001)*log_abs_T)*X(3)*X(5) + 1.2992000000000002e-18*std::exp((-0.071999999999999953)*log_abs_T)*X(0)*X(2)*x0 - 8.9485740404797324e-18*std::exp((1.360852208681)*log_abs_T)*X(0)*x17 - 8.6419753086419757e-23*X(0)*x1*x2 - X(0)*x19*(0.058916489135550004*x11*x4 - 0.009937168197024001*x12*x4 + 0.00074779264187460007*x13*x4 - 2.1050286473655998e-5*x14*x4 + 0.048699499187009998*x4*x9 - 0.56548861234079995*x42 - 0.13460048125451995*x43) - X(1)*X(3)*((x23) ? (
    1.2500000000000001e-10*x22 - 1.48e-6*x40 - 7.7700000000000002e-13
 )
 : (
    0
-)) + 2.5313028975878652e-10*X(2)*X(7)*x39 - 2.5313028975878652e-10*X(3)*X(5)*x39 + 2.4999999999999998e-6*X(3)*X(6)*x40 - x27*x41*(1.3296555000000001e-10*std::exp((-0.90150700000000006)*std::log(std::abs(T))) + 2.466314622e-10*std::exp((-0.44389999999999996)*std::log(std::abs(T))) + 8.1647792100000001e-16*std::exp((1.1825999999999999)*std::log(std::abs(T)))) - x41*((x30) ? (
-   2.6092635916521491e-16*std::exp((0.78186)*std::log(std::abs(T)))
+)) + 2.5313028975878652e-10*X(2)*X(7)*x39 - 2.5313028975878652e-10*X(3)*X(5)*x39 + 2.4999999999999998e-6*X(3)*X(6)*x40 - x27*x41*(1.3296555000000001e-10*std::exp((-0.90150700000000006)*log_abs_T) + 2.466314622e-10*std::exp((-0.44389999999999996)*log_abs_T) + 8.1647792100000001e-16*std::exp((1.1825999999999999)*log_abs_T)) - x41*((x30) ? (
+   2.6092635916521491e-16*std::exp((0.78186)*log_abs_T)
 )
 : (
-   3.7804827525136553e-14*std::exp((0.13944933584163111)*std::log(std::abs(T)))*x31 + x32*(0.0010061251423955*x11*x4 + 0.00051983779458540007*x12*x4 - 0.00018095067761848*x13*x4 + 1.9644009576313599e-5*x14*x4 - 7.2615442150620009e-7*x15*x4 + 0.025393366159889998*x4*x9 - 0.28420270431082961*x42 - 0.0057310564851968003*x43)
-)) - x28*x41*(-0.0064764051000000007*std::exp((0.04610000000000003)*std::log(std::abs(T))) - 2.7293978880000002e-10*std::exp((2.0424000000000002)*std::log(std::abs(T))) - 1.229450816e-13*std::exp((2.7740999999999998)*std::log(std::abs(T))))/((x26)*(x26)))/(X(0)*x37 + X(1)*x37 + X(10)*x38 + X(11)*x37 + X(12)*x37 + X(13)*x37 + X(2)*x37 + X(3)*x37 + X(4)*x37 + X(5)*x37 + X(6)*x38 + X(7)*x37 + X(8)*x38 + X(9)*x38);
+   3.7804827525136553e-14*std::exp((0.13944933584163111)*log_abs_T)*x31 + x32*(0.0010061251423955*x11*x4 + 0.00051983779458540007*x12*x4 - 0.00018095067761848*x13*x4 + 1.9644009576313599e-5*x14*x4 - 7.2615442150620009e-7*x15*x4 + 0.025393366159889998*x4*x9 - 0.28420270431082961*x42 - 0.0057310564851968003*x43)
+)) - x28*x41*(-0.0064764051000000007*std::exp((0.04610000000000003)*log_abs_T) - 2.7293978880000002e-10*std::exp((2.0424000000000002)*log_abs_T) - 1.229450816e-13*std::exp((2.7740999999999998)*log_abs_T))/((x26)*(x26)))/(X(0)*x37 + X(1)*x37 + X(10)*x38 + X(11)*x37 + X(12)*x37 + X(13)*x37 + X(2)*x37 + X(3)*x37 + X(4)*x37 + X(5)*x37 + X(6)*x38 + X(7)*x37 + X(8)*x38 + X(9)*x38);
 
 
-    x0 = 2.5950363272655348e-10*std::exp((-0.75)*std::log(std::abs(T)));
+    x0 = 2.5950363272655348e-10*std::exp((-0.75)*log_abs_T);
 
     x1 = 1.0/T;
 
@@ -3395,7 +3420,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
     x5 = T >= 50.0;
 
     x6 = ((x5) ? (
-   2.0000000000000001e-10*std::exp((0.40200000000000002)*std::log(std::abs(T)))*x4 - 3.3099999999999998e-17*std::exp((1.48)*std::log(std::abs(T)))
+   2.0000000000000001e-10*std::exp((0.40200000000000002)*log_abs_T)*x4 - 3.3099999999999998e-17*std::exp((1.48)*log_abs_T)
 )
 : (
    0
@@ -3404,7 +3429,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
     x7 = std::exp(-33.0*x1);
 
     x8 = ((x5) ? (
-   2.0299999999999998e-9*std::exp((-0.33200000000000002)*std::log(std::abs(T))) + 2.0600000000000001e-10*std::exp((0.39600000000000002)*std::log(std::abs(T)))*x7
+   2.0299999999999998e-9*std::exp((-0.33200000000000002)*log_abs_T) + 2.0600000000000001e-10*std::exp((0.39600000000000002)*log_abs_T)*x7
 )
 : (
    0
@@ -3428,7 +3453,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x17 = X(4)*x16;
 
-    x18 = 9.8726896031426014e-7*std::exp((-0.5)*std::log(std::abs(T)));
+    x18 = 9.8726896031426014e-7*std::exp((-0.5)*log_abs_T);
 
     x19 = std::exp((-2)*std::log(std::abs(x9)));
 
@@ -3484,32 +3509,32 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
     jac(5,14) = 0;
 
 
-    jac(5,15) = (1.9462772454491511e-10*std::exp((-1.75)*std::log(std::abs(T)))*X(0)*X(4) + 4.9363448015713007e-7*std::exp((-1.5)*std::log(std::abs(T)))*X(4)*X(7) + X(1)*X(5)*((x5) ? (
-   7.4200000000000004e-9*std::exp((-1.5979999999999999)*std::log(std::abs(T)))*x4 + 8.0400000000000002e-11*std::exp((-0.59799999999999998)*std::log(std::abs(T)))*x4 - 4.8987999999999998e-17*std::exp((0.47999999999999998)*std::log(std::abs(T)))
+    jac(5,15) = (1.9462772454491511e-10*std::exp((-1.75)*log_abs_T)*X(0)*X(4) + 4.9363448015713007e-7*std::exp((-1.5)*log_abs_T)*X(4)*X(7) + X(1)*X(5)*((x5) ? (
+   7.4200000000000004e-9*std::exp((-1.5979999999999999)*log_abs_T)*x4 + 8.0400000000000002e-11*std::exp((-0.59799999999999998)*log_abs_T)*x4 - 4.8987999999999998e-17*std::exp((0.47999999999999998)*log_abs_T)
 )
 : (
    0
 )) - X(2)*X(4)*((x5) ? (
-   6.7980000000000007e-9*std::exp((-1.6040000000000001)*std::log(std::abs(T)))*x7 - 6.7396000000000002e-10*std::exp((-1.3320000000000001)*std::log(std::abs(T))) + 8.1576000000000009e-11*std::exp((-0.60399999999999998)*std::log(std::abs(T)))*x7
+   6.7980000000000007e-9*std::exp((-1.6040000000000001)*log_abs_T)*x7 - 6.7396000000000002e-10*std::exp((-1.3320000000000001)*log_abs_T) + 8.1576000000000009e-11*std::exp((-0.60399999999999998)*log_abs_T)*x7
 )
 : (
    0
 )) - X(2)*x17*(5.1485802679346868*x1*std::exp((1.0)*std::log(std::abs(x11)))*x14 - 0.87659414490283338*x1*x13*x15 - 3.5068370966299316*x21) + X(4)*X(8)*(2.7400000000000004e-10*x1*x11*x19 - 8.4600000000000008e-10*x21) + 4.5700000000000003e-7*X(1)*X(10)*x2/((T)*(T)))/(X(0)*x23 + X(1)*x23 + X(10)*x24 + X(11)*x23 + X(12)*x23 + X(13)*x23 + X(2)*x23 + X(3)*x23 + X(4)*x23 + X(5)*x23 + X(6)*x24 + X(7)*x23 + X(8)*x24 + X(9)*x24);
 
 
-    x0 = 2.5950363272655348e-10*std::exp((-0.75)*std::log(std::abs(T)));
+    x0 = 2.5950363272655348e-10*std::exp((-0.75)*log_abs_T);
 
-    x1 = 7.1999999999999996e-8/std::sqrt(T);
+    x1 = 7.1999999999999996e-8/sqrt_T;
 
     x2 = std::exp(-0.00010729613733905579*T);
 
     x3 = X(5)*x2;
 
-    x4 = std::exp((0.94999999999999996)*std::log(std::abs(T)));
+    x4 = std::exp((0.94999999999999996)*log_abs_T);
 
     x5 = 1.3300135414628029e-18*x4;
 
-    x6 = std::exp((-0.5)*std::log(std::abs(T)));
+    x6 = std::exp((-0.5)*log_abs_T);
 
     x7 = 1.0/T;
 
@@ -3518,7 +3543,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
     x9 = T >= 50.0;
 
     x10 = ((x9) ? (
-   2.0000000000000001e-10*std::exp((0.40200000000000002)*std::log(std::abs(T)))*x8 - 3.3099999999999998e-17*std::exp((1.48)*std::log(std::abs(T)))
+   2.0000000000000001e-10*std::exp((0.40200000000000002)*log_abs_T)*x8 - 3.3099999999999998e-17*std::exp((1.48)*log_abs_T)
 )
 : (
    0
@@ -3542,9 +3567,9 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x19 = X(5)*x18;
 
-    x20 = 6.1739095063118665e-10*std::exp((0.40999999999999998)*std::log(std::abs(T)));
+    x20 = 6.1739095063118665e-10*std::exp((0.40999999999999998)*log_abs_T);
 
-    x21 = std::exp((-2)*std::log(std::abs(T)));
+    x21 = std::exp((-2)*log_abs_T);
 
     x22 = 5.25e-11*std::exp(173900.0*x21 - 4430.0*x7);
 
@@ -3560,13 +3585,13 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
     x25 = std::exp(-33.0*x7);
 
     x26 = ((x9) ? (
-   2.0299999999999998e-9*std::exp((-0.33200000000000002)*std::log(std::abs(T))) + 2.0600000000000001e-10*std::exp((0.39600000000000002)*std::log(std::abs(T)))*x25
+   2.0299999999999998e-9*std::exp((-0.33200000000000002)*log_abs_T) + 2.0600000000000001e-10*std::exp((0.39600000000000002)*log_abs_T)*x25
 )
 : (
    0
 ));
 
-    x27 = 2.6534040307116387e-9*std::exp((-0.10000000000000001)*std::log(std::abs(T)));
+    x27 = 2.6534040307116387e-9*std::exp((-0.10000000000000001)*log_abs_T);
 
     x28 = integrators::math::powi<-5>(x11);
 
@@ -3595,9 +3620,9 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
    3.1699999999999999e-10*x37
 ));
 
-    x39 = std::exp((-1.5)*std::log(std::abs(T)))*X(7);
+    x39 = std::exp((-1.5)*log_abs_T)*X(7);
 
-    x40 = std::exp((-0.59000000000000008)*std::log(std::abs(T)));
+    x40 = std::exp((-0.59000000000000008)*log_abs_T);
 
     x41 = x12*x7;
 
@@ -3649,8 +3674,8 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
     jac(6,14) = 0;
 
 
-    jac(6,15) = (-1.9462772454491511e-10*std::exp((-1.75)*std::log(std::abs(T)))*X(0)*X(4) + 2.6534040307116389e-10*std::exp((-1.1000000000000001)*std::log(std::abs(T)))*X(3)*X(5) - 1.2635128643896626e-18*std::exp((-0.050000000000000044)*std::log(std::abs(T)))*X(0)*x3 + 1.4270531560759686e-22*X(0)*X(5)*x2*x4 - X(1)*X(5)*((x9) ? (
-   7.4200000000000004e-9*std::exp((-1.5979999999999999)*std::log(std::abs(T)))*x8 + 8.0400000000000002e-11*std::exp((-0.59799999999999998)*std::log(std::abs(T)))*x8 - 4.8987999999999998e-17*std::exp((0.47999999999999998)*std::log(std::abs(T)))
+    jac(6,15) = (-1.9462772454491511e-10*std::exp((-1.75)*log_abs_T)*X(0)*X(4) + 2.6534040307116389e-10*std::exp((-1.1000000000000001)*log_abs_T)*X(3)*X(5) - 1.2635128643896626e-18*std::exp((-0.050000000000000044)*log_abs_T)*X(0)*x3 + 1.4270531560759686e-22*X(0)*X(5)*x2*x4 - X(1)*X(5)*((x9) ? (
+   7.4200000000000004e-9*std::exp((-1.5979999999999999)*log_abs_T)*x8 + 8.0400000000000002e-11*std::exp((-0.59799999999999998)*log_abs_T)*x8 - 4.8987999999999998e-17*std::exp((0.47999999999999998)*log_abs_T)
 )
 : (
    0
@@ -3660,7 +3685,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 : (
    0
 )) + X(2)*X(4)*((x9) ? (
-   6.7980000000000007e-9*std::exp((-1.6040000000000001)*std::log(std::abs(T)))*x25 - 6.7396000000000002e-10*std::exp((-1.3320000000000001)*std::log(std::abs(T))) + 8.1576000000000009e-11*std::exp((-0.60399999999999998)*std::log(std::abs(T)))*x25
+   6.7980000000000007e-9*std::exp((-1.6040000000000001)*log_abs_T)*x25 - 6.7396000000000002e-10*std::exp((-1.3320000000000001)*log_abs_T) + 8.1576000000000009e-11*std::exp((-0.60399999999999998)*log_abs_T)*x25
 )
 : (
    0
@@ -3669,7 +3694,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 )
 : (
    1.650619e-6*x21*x37
-)) - 3.5999999999999998e-8*X(0)*X(9)/std::exp((3.0/2.0)*std::log(std::abs(T))))/(X(0)*x43 + X(1)*x43 + X(10)*x44 + X(11)*x43 + X(12)*x43 + X(13)*x43 + X(2)*x43 + X(3)*x43 + X(4)*x43 + X(5)*x43 + X(6)*x44 + X(7)*x43 + X(8)*x44 + X(9)*x44);
+)) - 3.5999999999999998e-8*X(0)*X(9)/std::exp((3.0/2.0)*log_abs_T))/(X(0)*x43 + X(1)*x43 + X(10)*x44 + X(11)*x43 + X(12)*x43 + X(13)*x43 + X(2)*x43 + X(3)*x43 + X(4)*x43 + X(5)*x43 + X(6)*x44 + X(7)*x43 + X(8)*x44 + X(9)*x44);
 
 
     x0 = ((T)*(T));
@@ -3687,7 +3712,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
    0
 ));
 
-    x5 = 1.0e-8*std::exp((-0.40000000000000002)*std::log(std::abs(T)));
+    x5 = 1.0e-8*std::exp((-0.40000000000000002)*log_abs_T);
 
     x6 = T < 30;
 
@@ -3708,7 +3733,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
     x14 = std::exp((-0.2072*x10*x11 + 1.786*x12*x13 - x7*x9 - 18.199999999999999)*std::log(std::abs(10)));
 
     x15 = ((x6) ? (
-   3.4977396723747635e-20*std::exp((-0.14999999999999999)*std::log(std::abs(T)))
+   3.4977396723747635e-20*std::exp((-0.14999999999999999)*log_abs_T)
 )
 : (
    x14
@@ -3735,7 +3760,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
    0
 ));
 
-    x24 = 4.9999999999999996e-6/std::sqrt(T);
+    x24 = 4.9999999999999996e-6/sqrt_T;
 
     x25 = x13*x16;
 
@@ -3787,13 +3812,13 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
     jac(7,14) = 0;
 
 
-    jac(7,15) = (-4.0000000000000002e-9*std::exp((-1.3999999999999999)*std::log(std::abs(T)))*X(1)*X(3) - X(0)*X(6)*((x3) ? (
+    jac(7,15) = (-4.0000000000000002e-9*std::exp((-1.3999999999999999)*log_abs_T)*X(1)*X(3) - X(0)*X(6)*((x3) ? (
    1.4685599999999999e-14*T - 2.2642200000000001e-18*x0 + 1.3387199999999999e-22*x1 - 2.7639999999999999e-27*x2 - 2.3088e-11
 )
 : (
    0
 )) + X(1)*X(2)*((x6) ? (
-   -5.2466095085621454e-21*std::exp((-1.1499999999999999)*std::log(std::abs(T)))
+   -5.2466095085621454e-21*std::exp((-1.1499999999999999)*log_abs_T)
 )
 : (
    x14*x8*(-0.62159999999999993*x10*x25 + 3.5720000000000001*x12*x16*x7 - x16*x9)
@@ -3802,30 +3827,30 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 )
 : (
    0
-)) + 2.4999999999999998e-6*X(3)*X(6)/std::exp((3.0/2.0)*std::log(std::abs(T))))/(X(0)*x27 + X(1)*x27 + X(10)*x28 + X(11)*x27 + X(12)*x27 + X(13)*x27 + X(2)*x27 + X(3)*x27 + X(4)*x27 + X(5)*x27 + X(6)*x28 + X(7)*x27 + X(8)*x28 + X(9)*x28);
+)) + 2.4999999999999998e-6*X(3)*X(6)/std::exp((3.0/2.0)*log_abs_T))/(X(0)*x27 + X(1)*x27 + X(10)*x28 + X(11)*x27 + X(12)*x27 + X(13)*x27 + X(2)*x27 + X(3)*x27 + X(4)*x27 + X(5)*x27 + X(6)*x28 + X(7)*x27 + X(8)*x28 + X(9)*x28);
 
 
     x0 = std::exp(-0.00010729613733905579*T);
 
     x1 = X(5)*x0;
 
-    x2 = std::exp((0.94999999999999996)*std::log(std::abs(T)));
+    x2 = std::exp((0.94999999999999996)*log_abs_T);
 
     x3 = 1.3300135414628029e-18*x2;
 
-    x4 = std::exp((-0.5)*std::log(std::abs(T)));
+    x4 = std::exp((-0.5)*log_abs_T);
 
     x5 = X(7)*x4;
 
-    x6 = 2.6534040307116387e-9*std::exp((-0.10000000000000001)*std::log(std::abs(T)));
+    x6 = 2.6534040307116387e-9*std::exp((-0.10000000000000001)*log_abs_T);
 
-    x7 = 6.1739095063118665e-10*std::exp((0.40999999999999998)*std::log(std::abs(T)));
+    x7 = 6.1739095063118665e-10*std::exp((0.40999999999999998)*log_abs_T);
 
-    x8 = std::exp((-1.5)*std::log(std::abs(T)))*X(7);
+    x8 = std::exp((-1.5)*log_abs_T)*X(7);
 
     x9 = X(2)*X(7);
 
-    x10 = 2.5313028975878652e-10*std::exp((-0.59000000000000008)*std::log(std::abs(T)));
+    x10 = 2.5313028975878652e-10*std::exp((-0.59000000000000008)*log_abs_T);
 
     x11 = X(0)*x1;
 
@@ -3877,7 +3902,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
     jac(8,14) = 0;
 
 
-    jac(8,15) = (2.6534040307116389e-10*std::exp((-1.1000000000000001)*std::log(std::abs(T)))*x9 + 1.2635128643896626e-18*std::exp((-0.050000000000000044)*std::log(std::abs(T)))*x11 + 3.9837168574084181e-7*X(1)*x8 + X(3)*X(5)*x10 + 4.9363448015713007e-7*X(4)*x8 - x10*x9 - 1.4270531560759686e-22*x11*x2)/(X(0)*x13 + X(1)*x13 + X(10)*x14 + X(11)*x13 + X(12)*x13 + X(13)*x13 + X(2)*x13 + X(3)*x13 + X(4)*x13 + X(5)*x13 + X(6)*x14 + X(7)*x13 + X(8)*x14 + X(9)*x14);
+    jac(8,15) = (2.6534040307116389e-10*std::exp((-1.1000000000000001)*log_abs_T)*x9 + 1.2635128643896626e-18*std::exp((-0.050000000000000044)*log_abs_T)*x11 + 3.9837168574084181e-7*X(1)*x8 + X(3)*X(5)*x10 + 4.9363448015713007e-7*X(4)*x8 - x10*x9 - 1.4270531560759686e-22*x11*x2)/(X(0)*x13 + X(1)*x13 + X(10)*x14 + X(11)*x13 + X(12)*x13 + X(13)*x13 + X(2)*x13 + X(3)*x13 + X(4)*x13 + X(5)*x13 + X(6)*x14 + X(7)*x13 + X(8)*x14 + X(9)*x14);
 
 
     x0 = 1.0/T;
@@ -3886,13 +3911,13 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x2 = X(8)*x1;
 
-    x3 = 35.5*std::exp((-2.2799999999999998)*std::log(std::abs(T)));
+    x3 = 35.5*std::exp((-2.2799999999999998)*log_abs_T);
 
     x4 = std::exp(-102000.0*x0);
 
     x5 = X(8)*x4;
 
-    x6 = 4.3799999999999999e-10*std::exp((0.34999999999999998)*std::log(std::abs(T)));
+    x6 = 4.3799999999999999e-10*std::exp((0.34999999999999998)*log_abs_T);
 
     x7 = std::exp(-21237.150000000001*x0);
 
@@ -3957,7 +3982,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x35 = std::exp((x34)*std::log(std::abs(x19)));
 
-    x36 = std::sqrt(T);
+    x36 = sqrt_T;
 
     x37 = 1.0/x36;
 
@@ -4115,7 +4140,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x114 = x113*(-x103*(x105*x108 + x110*x112) - x74*(x76*x80 + x82*x84)) + x31*x47 - x47*x49;
 
-    x115 = std::exp((-2)*std::log(std::abs(T)));
+    x115 = std::exp((-2)*log_abs_T);
 
     x116 = 5.25e-11*std::exp(-4430.0*x0 + 173900.0*x115);
 
@@ -4132,13 +4157,13 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x120 = ((X(2))*(X(2)));
 
-    x121 = std::exp((-0.25)*std::log(std::abs(T)));
+    x121 = std::exp((-0.25)*log_abs_T);
 
-    x122 = 0.0061910000000000003*std::exp((1.0461)*std::log(std::abs(T))) + 8.9711999999999997e-11*std::exp((3.0424000000000002)*std::log(std::abs(T))) + 3.2575999999999999e-14*std::exp((3.7740999999999998)*std::log(std::abs(T))) + 1.0;
+    x122 = 0.0061910000000000003*std::exp((1.0461)*log_abs_T) + 8.9711999999999997e-11*std::exp((3.0424000000000002)*log_abs_T) + 3.2575999999999999e-14*std::exp((3.7740999999999998)*log_abs_T) + 1.0;
 
     x123 = 1.0/x122;
 
-    x124 = 1.3500000000000001e-9*std::exp((0.098492999999999997)*std::log(std::abs(T))) + 4.4350199999999998e-10*std::exp((0.55610000000000004)*std::log(std::abs(T))) + 3.7408500000000004e-16*std::exp((2.1825999999999999)*std::log(std::abs(T)));
+    x124 = 1.3500000000000001e-9*std::exp((0.098492999999999997)*log_abs_T) + 4.4350199999999998e-10*std::exp((0.55610000000000004)*log_abs_T) + 3.7408500000000004e-16*std::exp((2.1825999999999999)*log_abs_T);
 
     x125 = x123*x124;
 
@@ -4148,7 +4173,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x128 = -7.5000000000000001e-33*x121 - 2.5000000000000002e-32*x37;
 
-    x129 = 4.9999999999999996e-6/std::sqrt(T);
+    x129 = 4.9999999999999996e-6/sqrt_T;
 
     x130 = 1.3700000000000002e-10*x25*x9 - 8.4600000000000008e-10*x61 - 4.1700000000000001e-10;
 
@@ -4185,9 +4210,9 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x144 = X(0)*x5;
 
-    x145 = std::exp((-1.5)*std::log(std::abs(T)));
+    x145 = std::exp((-1.5)*log_abs_T);
 
-    x146 = std::exp((-1.25)*std::log(std::abs(T)));
+    x146 = std::exp((-1.25)*log_abs_T);
 
     x147 = X(8)*x120;
 
@@ -4209,7 +4234,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x156 = x27*(-7.460375701300709*x0*x22*x25 + 2.9933606208922598*x0*x24);
 
-    x157 = std::exp((-2.5)*std::log(std::abs(T)));
+    x157 = std::exp((-2.5)*log_abs_T);
 
     x158 = x115*x24;
 
@@ -4267,7 +4292,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
     jac(9,14) = 0;
 
 
-    jac(9,15) = (-1658098.5*std::exp((-4.2799999999999994)*std::log(std::abs(T)))*x143 + 80.939999999999998*std::exp((-3.2799999999999998)*std::log(std::abs(T)))*x143 - 4.4675999999999997e-5*std::exp((-1.6499999999999999)*std::log(std::abs(T)))*x144 - 1.5329999999999998e-10*std::exp((-0.65000000000000002)*std::log(std::abs(T)))*x144 + 4.5700000000000003e-7*X(1)*X(10)*x115*x17 - X(1)*X(8)*((x15) ? (
+    jac(9,15) = (-1658098.5*std::exp((-4.2799999999999994)*log_abs_T)*x143 + 80.939999999999998*std::exp((-3.2799999999999998)*log_abs_T)*x143 - 4.4675999999999997e-5*std::exp((-1.6499999999999999)*log_abs_T)*x144 - 1.5329999999999998e-10*std::exp((-0.65000000000000002)*log_abs_T)*x144 + 4.5700000000000003e-7*X(1)*X(10)*x115*x17 - X(1)*X(8)*((x15) ? (
    21237.150000000001*x115*x14 + x7*(-1.09028466e-10*x0*x12 + 2.4718352399999997e-12*x0*x13 + 3.3735381999999997e-7*x0 - 2.8982736e-7*x149 + 1.0251841499999999e-7*x152 - 1.9125491199999999e-8*x153 + 1.9865770999999999e-9*x154)
 )
 : (
@@ -4282,10 +4307,10 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 )
 : (
    1.650619e-6*x115*x135
-)) + x113*(-x103*(3816.3275589792611*x102*x115 + x105*(x106*x164 + x163*std::log(x99)) + x110*(x111*x164 + x163*std::log(x88)) + 49431.413233526648*x115 + 98.337445626384849*x148 - 9.3363608541157479*x150 - 1.783649418259394*x155 - 1354334.7412883535*x162 - 2.3025850929940459*x92*(70.138370000000009*x0*x24 - 9.4070299999999989*x150 - 0.77462909999999996*x155 - 160821.97128249999*x158/x93 - 588180.10479140002*x162)) - x74*(4790.3210533157426*x115*x73 + 54584.391438988954*x115 - 157.54846734442862*x148 + 198.95454259823751*x150 - 32.004783802655837*x155 - 6559375.6154640894*x159 - 2.3025850929940459*x60*(75.773826*x0*x25*x8 - 14.509090000000008*x148 - 13.899501000000001*x155 - 331159.79815649998*x158/x62 - 2848700.6345267999*x159) + x76*(x160*std::log(x70) + x161*x77) + x82*(x160*std::log(x54) + x161*x83))) + x123*x151*(1.3296555000000001e-10*std::exp((-0.90150700000000006)*std::log(std::abs(T))) + 2.466314622e-10*std::exp((-0.44389999999999996)*std::log(std::abs(T))) + 8.1647792100000001e-16*std::exp((1.1825999999999999)*std::log(std::abs(T)))) + x147*(-2.5000000000000002e-32*x145 - 3.75e-33*x146) + x147*(1.2500000000000001e-32*x145 + 1.875e-33*x146) - x46*(69500.0*x115*x33 - x156*x31) - x46*(x156*x49 + 12307692.307692308*x36*x43*(-4.0625000000000001e-8*x145*x41 + 0.0042250000000000005*x157*x38*x40 - 0.00048750000000000003*x157*std::exp(-58000.0*x0))*std::exp(x39)/x38) + x124*x151*(-0.0064764051000000007*std::exp((0.04610000000000003)*std::log(std::abs(T))) - 2.7293978880000002e-10*std::exp((2.0424000000000002)*std::log(std::abs(T))) - 1.229450816e-13*std::exp((2.7740999999999998)*std::log(std::abs(T))))/((x122)*(x122)) - 2.4999999999999998e-6*X(3)*X(6)/std::exp((3.0/2.0)*std::log(std::abs(T))))/(X(0)*x141 + X(1)*x141 + X(10)*x142 + X(11)*x141 + X(12)*x141 + X(13)*x141 + X(2)*x141 + X(3)*x141 + X(4)*x141 + X(5)*x141 + X(6)*x142 + X(7)*x141 + X(8)*x142 + X(9)*x142);
+)) + x113*(-x103*(3816.3275589792611*x102*x115 + x105*(x106*x164 + x163*std::log(x99)) + x110*(x111*x164 + x163*std::log(x88)) + 49431.413233526648*x115 + 98.337445626384849*x148 - 9.3363608541157479*x150 - 1.783649418259394*x155 - 1354334.7412883535*x162 - 2.3025850929940459*x92*(70.138370000000009*x0*x24 - 9.4070299999999989*x150 - 0.77462909999999996*x155 - 160821.97128249999*x158/x93 - 588180.10479140002*x162)) - x74*(4790.3210533157426*x115*x73 + 54584.391438988954*x115 - 157.54846734442862*x148 + 198.95454259823751*x150 - 32.004783802655837*x155 - 6559375.6154640894*x159 - 2.3025850929940459*x60*(75.773826*x0*x25*x8 - 14.509090000000008*x148 - 13.899501000000001*x155 - 331159.79815649998*x158/x62 - 2848700.6345267999*x159) + x76*(x160*std::log(x70) + x161*x77) + x82*(x160*std::log(x54) + x161*x83))) + x123*x151*(1.3296555000000001e-10*std::exp((-0.90150700000000006)*log_abs_T) + 2.466314622e-10*std::exp((-0.44389999999999996)*log_abs_T) + 8.1647792100000001e-16*std::exp((1.1825999999999999)*log_abs_T)) + x147*(-2.5000000000000002e-32*x145 - 3.75e-33*x146) + x147*(1.2500000000000001e-32*x145 + 1.875e-33*x146) - x46*(69500.0*x115*x33 - x156*x31) - x46*(x156*x49 + 12307692.307692308*x36*x43*(-4.0625000000000001e-8*x145*x41 + 0.0042250000000000005*x157*x38*x40 - 0.00048750000000000003*x157*std::exp(-58000.0*x0))*std::exp(x39)/x38) + x124*x151*(-0.0064764051000000007*std::exp((0.04610000000000003)*log_abs_T) - 2.7293978880000002e-10*std::exp((2.0424000000000002)*log_abs_T) - 1.229450816e-13*std::exp((2.7740999999999998)*log_abs_T))/((x122)*(x122)) - 2.4999999999999998e-6*X(3)*X(6)/std::exp((3.0/2.0)*log_abs_T))/(X(0)*x141 + X(1)*x141 + X(10)*x142 + X(11)*x141 + X(12)*x141 + X(13)*x141 + X(2)*x141 + X(3)*x141 + X(4)*x141 + X(5)*x141 + X(6)*x142 + X(7)*x141 + X(8)*x142 + X(9)*x142);
 
 
-    x0 = 7.1999999999999996e-8/std::sqrt(T);
+    x0 = 7.1999999999999996e-8/sqrt_T;
 
     x1 = std::log(T);
 
@@ -4357,7 +4382,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
     jac(10,14) = 0;
 
 
-    jac(10,15) = (X(1)*x11*x8 + X(2)*x11*x9 + 3.5999999999999998e-8*X(0)*X(9)/std::exp((3.0/2.0)*std::log(std::abs(T))))/(X(0)*x13 + X(1)*x13 + X(10)*x14 + X(11)*x13 + X(12)*x13 + X(13)*x13 + X(2)*x13 + X(3)*x13 + X(4)*x13 + X(5)*x13 + X(6)*x14 + X(7)*x13 + X(8)*x14 + X(9)*x14);
+    jac(10,15) = (X(1)*x11*x8 + X(2)*x11*x9 + 3.5999999999999998e-8*X(0)*X(9)/std::exp((3.0/2.0)*log_abs_T))/(X(0)*x13 + X(1)*x13 + X(10)*x14 + X(11)*x13 + X(12)*x13 + X(13)*x13 + X(2)*x13 + X(3)*x13 + X(4)*x13 + X(5)*x13 + X(6)*x14 + X(7)*x13 + X(8)*x14 + X(9)*x14);
 
 
     x0 = 1.0/T;
@@ -4366,9 +4391,9 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x2 = 1.0000000000000001e-9*x1;
 
-    x3 = 2.6534040307116387e-9*std::exp((-0.10000000000000001)*std::log(std::abs(T)));
+    x3 = 2.6534040307116387e-9*std::exp((-0.10000000000000001)*log_abs_T);
 
-    x4 = std::exp((-2)*std::log(std::abs(T)));
+    x4 = std::exp((-2)*log_abs_T);
 
     x5 = 5.25e-11*std::exp(-4430.0*x0 + 173900.0*x4);
 
@@ -4420,7 +4445,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
    3.1699999999999999e-10*x23
 ));
 
-    x25 = 2.6534040307116389e-10*std::exp((-1.1000000000000001)*std::log(std::abs(T)));
+    x25 = 2.6534040307116389e-10*std::exp((-1.1000000000000001)*log_abs_T);
 
     x26 = x0*x10*x12;
 
@@ -4485,7 +4510,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 )))/(X(0)*x28 + X(1)*x28 + X(10)*x29 + X(11)*x28 + X(12)*x28 + X(13)*x28 + X(2)*x28 + X(3)*x28 + X(4)*x28 + X(5)*x28 + X(6)*x29 + X(7)*x28 + X(8)*x29 + X(9)*x29);
 
 
-    x0 = std::sqrt(T);
+    x0 = sqrt_T;
 
     x1 = 0.00060040841663220993*x0 + 1.0;
 
@@ -4519,7 +4544,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x16 = X(12)*x15;
 
-    x17 = 3.8571873359681582e-209*std::exp((43.933476326349997)*std::log(std::abs(T)));
+    x17 = 3.8571873359681582e-209*std::exp((43.933476326349997)*log_abs_T);
 
     x18 = x16*x17;
 
@@ -4575,10 +4600,10 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
     jac(12,14) = 0;
 
 
-    jac(12,15) = (1.694596485110541e-207*std::exp((42.933476326349997)*std::log(std::abs(T)))*X(0)*x16 + 3.0451686126851684e-13*X(0)*std::exp((-2.7523999999999997)*std::log(std::abs(x1)))*x20*x5 + X(0)*x18*(-3.0769865337967999*x10*x20 + 0.40565210486515002*x11*x20 - 0.031944123769722006*x12*x20 + 0.0013829937185547*x13*x20 - 2.5324648525320001e-5*x14*x20 - 36.961339871360003*x20*x8 + 14.104879460277006*x20*x9) + 2.3410580000000002e-11*X(11)*x19*x20*std::exp((-1.2476)*std::log(std::abs(x3))) + 2.8942185892741411e-10*X(0)*x6/std::exp((3.0/2.0)*std::log(std::abs(T))))/(X(0)*x22 + X(1)*x22 + X(10)*x23 + X(11)*x22 + X(12)*x22 + X(13)*x22 + X(2)*x22 + X(3)*x22 + X(4)*x22 + X(5)*x22 + X(6)*x23 + X(7)*x22 + X(8)*x23 + X(9)*x23);
+    jac(12,15) = (1.694596485110541e-207*std::exp((42.933476326349997)*log_abs_T)*X(0)*x16 + 3.0451686126851684e-13*X(0)*std::exp((-2.7523999999999997)*std::log(std::abs(x1)))*x20*x5 + X(0)*x18*(-3.0769865337967999*x10*x20 + 0.40565210486515002*x11*x20 - 0.031944123769722006*x12*x20 + 0.0013829937185547*x13*x20 - 2.5324648525320001e-5*x14*x20 - 36.961339871360003*x20*x8 + 14.104879460277006*x20*x9) + 2.3410580000000002e-11*X(11)*x19*x20*std::exp((-1.2476)*std::log(std::abs(x3))) + 2.8942185892741411e-10*X(0)*x6/std::exp((3.0/2.0)*log_abs_T))/(X(0)*x22 + X(1)*x22 + X(10)*x23 + X(11)*x22 + X(12)*x22 + X(13)*x22 + X(2)*x22 + X(3)*x22 + X(4)*x22 + X(5)*x22 + X(6)*x23 + X(7)*x22 + X(8)*x23 + X(9)*x23);
 
 
-    x0 = std::sqrt(T);
+    x0 = sqrt_T;
 
     x1 = 0.00060040841663220993*x0 + 1.0;
 
@@ -4594,7 +4619,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x7 = 5.7884371785482823e-10/x0;
 
-    x8 = 1.4981088130721367e-10*std::exp((-0.63529999999999998)*std::log(std::abs(T)));
+    x8 = 1.4981088130721367e-10*std::exp((-0.63529999999999998)*log_abs_T);
 
     x9 = 8.6173430000000006e-5*T;
 
@@ -4608,7 +4633,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
    x8
 )
 : (
-   1250086.112245841*std::exp((-1.5)*std::log(std::abs(T)))*x12 + x8
+   1250086.112245841*std::exp((-1.5)*log_abs_T)*x12 + x8
 ));
 
     x14 = std::log(x9);
@@ -4629,15 +4654,15 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x22 = std::exp(-10.753230200000001*x15 + 3.0580387500000001*x16 - 0.56851189000000002*x17 + 0.067953912300000002*x18 - 0.0050090561*x19 + 0.000206723616*x20 - 3.6491614100000001e-6*x21);
 
-    x23 = std::exp((23.915965629999999)*std::log(std::abs(T)));
+    x23 = std::exp((23.915965629999999)*log_abs_T);
 
     x24 = 4.3524079114767552e-117*x23;
 
     x25 = std::exp(-18.480669935680002*x15 + 4.7016264867590021*x16 - 0.76924663344919997*x17 + 0.081130420973029999*x18 - 0.005324020628287001*x19 + 0.00019757053122209999*x20 - 3.1655810656650001e-6*x21);
 
-    x26 = 3.8571873359681582e-209*std::exp((43.933476326349997)*std::log(std::abs(T)))*x25;
+    x26 = 3.8571873359681582e-209*std::exp((43.933476326349997)*log_abs_T)*x25;
 
-    x27 = std::exp((-0.75)*std::log(std::abs(T)));
+    x27 = std::exp((-0.75)*log_abs_T);
 
     x28 = std::exp(-127500.0*x11);
 
@@ -4647,18 +4672,18 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
    1.26e-9*x27*x28
 )
 : (
-   4.0000000000000003e-37*std::exp((4.7400000000000002)*std::log(std::abs(T)))
+   4.0000000000000003e-37*std::exp((4.7400000000000002)*log_abs_T)
 ));
 
-    x31 = 2.8833736969617052e-16*std::exp((0.25)*std::log(std::abs(T)));
+    x31 = 2.8833736969617052e-16*std::exp((0.25)*log_abs_T);
 
     x32 = X(0)*x2;
 
     x33 = X(0)*X(12);
 
-    x34 = -9.5174852894472843e-11*std::exp((-1.6353)*std::log(std::abs(T)));
+    x34 = -9.5174852894472843e-11*std::exp((-1.6353)*log_abs_T);
 
-    x35 = std::exp((-3.5)*std::log(std::abs(T)));
+    x35 = std::exp((-3.5)*log_abs_T);
 
     x36 = x11*x14;
 
@@ -4716,20 +4741,20 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
     jac(13,14) = X(0)*x22*x24 + X(1)*x30;
 
 
-    jac(13,15) = (1.0409203801861816e-115*std::exp((22.915965629999999)*std::log(std::abs(T)))*X(0)*X(13)*x22 - 1.694596485110541e-207*std::exp((42.933476326349997)*std::log(std::abs(T)))*x25*x33 + 4.3524079114767552e-117*X(0)*X(13)*x22*x23*(9.1741162500000009*x11*x15 + 0.33976956150000004*x11*x17 + 0.001447065312*x11*x19 - 21.506460400000002*x36 - 2.2740475600000001*x37 - 0.030054336600000002*x38 - 2.9193291280000001e-5*x39) - 3.0451686126851684e-13*X(0)*std::exp((-2.7523999999999997)*std::log(std::abs(x1)))*x11*x5 + X(1)*X(13)*((x29) ? (
-   0.00016065*std::exp((-2.75)*std::log(std::abs(T)))*x28 - 9.4499999999999994e-10*std::exp((-1.75)*std::log(std::abs(T)))*x28
+    jac(13,15) = (1.0409203801861816e-115*std::exp((22.915965629999999)*log_abs_T)*X(0)*X(13)*x22 - 1.694596485110541e-207*std::exp((42.933476326349997)*log_abs_T)*x25*x33 + 4.3524079114767552e-117*X(0)*X(13)*x22*x23*(9.1741162500000009*x11*x15 + 0.33976956150000004*x11*x17 + 0.001447065312*x11*x19 - 21.506460400000002*x36 - 2.2740475600000001*x37 - 0.030054336600000002*x38 - 2.9193291280000001e-5*x39) - 3.0451686126851684e-13*X(0)*std::exp((-2.7523999999999997)*std::log(std::abs(x1)))*x11*x5 + X(1)*X(13)*((x29) ? (
+   0.00016065*std::exp((-2.75)*log_abs_T)*x28 - 9.4499999999999994e-10*std::exp((-1.75)*log_abs_T)*x28
 )
 : (
-   1.8960000000000001e-36*std::exp((3.7400000000000002)*std::log(std::abs(T)))
+   1.8960000000000001e-36*std::exp((3.7400000000000002)*log_abs_T)
 )) - 2.3410580000000002e-11*X(11)*x11*std::exp((-1.2476)*std::log(std::abs(x3)))*x32 - 7.2084342424042629e-17*X(12)*X(2)*x27 - x26*x33*(14.104879460277006*x11*x15 + 0.40565210486515002*x11*x17 + 0.0013829937185547*x11*x19 - 36.961339871360003*x36 - 3.0769865337967999*x37 - 0.031944123769722006*x38 - 2.5324648525320001e-5*x39) - x33*((x10) ? (
    x34
 )
 : (
-   -1875129.1683687614*std::exp((-2.5)*std::log(std::abs(T)))*x12 + 587469852277.90271*x12*x35 + x34 + 54.282214350476039*x35*std::exp(-563932.20901156683*x11)
-)) - 2.8942185892741411e-10*X(0)*x6/std::exp((3.0/2.0)*std::log(std::abs(T))))/(X(0)*x41 + X(1)*x41 + X(10)*x42 + X(11)*x41 + X(12)*x41 + X(13)*x41 + X(2)*x41 + X(3)*x41 + X(4)*x41 + X(5)*x41 + X(6)*x42 + X(7)*x41 + X(8)*x42 + X(9)*x42);
+   -1875129.1683687614*std::exp((-2.5)*log_abs_T)*x12 + 587469852277.90271*x12*x35 + x34 + 54.282214350476039*x35*std::exp(-563932.20901156683*x11)
+)) - 2.8942185892741411e-10*X(0)*x6/std::exp((3.0/2.0)*log_abs_T))/(X(0)*x41 + X(1)*x41 + X(10)*x42 + X(11)*x41 + X(12)*x41 + X(13)*x41 + X(2)*x41 + X(3)*x41 + X(4)*x41 + X(5)*x41 + X(6)*x42 + X(7)*x41 + X(8)*x42 + X(9)*x42);
 
 
-    x0 = 1.4981088130721367e-10*std::exp((-0.63529999999999998)*std::log(std::abs(T)));
+    x0 = 1.4981088130721367e-10*std::exp((-0.63529999999999998)*log_abs_T);
 
     x1 = 8.6173430000000006e-5*T;
 
@@ -4743,7 +4768,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
    x0
 )
 : (
-   1250086.112245841*std::exp((-1.5)*std::log(std::abs(T)))*x4 + x0
+   1250086.112245841*std::exp((-1.5)*log_abs_T)*x4 + x0
 ));
 
     x6 = std::log(x1);
@@ -4764,11 +4789,11 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x14 = X(13)*x13;
 
-    x15 = 4.3524079114767552e-117*std::exp((23.915965629999999)*std::log(std::abs(T)));
+    x15 = 4.3524079114767552e-117*std::exp((23.915965629999999)*log_abs_T);
 
     x16 = x14*x15;
 
-    x17 = std::exp((-0.75)*std::log(std::abs(T)));
+    x17 = std::exp((-0.75)*log_abs_T);
 
     x18 = std::exp(-127500.0*x3);
 
@@ -4778,14 +4803,14 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
    1.26e-9*x17*x18
 )
 : (
-   4.0000000000000003e-37*std::exp((4.7400000000000002)*std::log(std::abs(T)))
+   4.0000000000000003e-37*std::exp((4.7400000000000002)*log_abs_T)
 ));
 
-    x21 = 2.8833736969617052e-16*std::exp((0.25)*std::log(std::abs(T)));
+    x21 = 2.8833736969617052e-16*std::exp((0.25)*log_abs_T);
 
-    x22 = -9.5174852894472843e-11*std::exp((-1.6353)*std::log(std::abs(T)));
+    x22 = -9.5174852894472843e-11*std::exp((-1.6353)*log_abs_T);
 
-    x23 = std::exp((-3.5)*std::log(std::abs(T)));
+    x23 = std::exp((-3.5)*log_abs_T);
 
     x24 = 1.0/(9.1093818800000008e-28*X(0) + 1.6726215800000001e-24*X(1) + 5.01956503638e-24*X(10) + 6.6902431600000005e-24*X(11) + 6.6911540981899994e-24*X(12) + 6.6920650363799998e-24*X(13) + 1.6735325181900001e-24*X(2) + 1.6744434563800001e-24*X(3) + 3.3451215800000003e-24*X(4) + 3.3460325181899999e-24*X(5) + 3.3461540981899999e-24*X(6) + 3.3469434563800003e-24*X(7) + 3.3470650363800003e-24*X(8) + 5.0186540981899997e-24*X(9));
 
@@ -4835,16 +4860,16 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
     jac(14,14) = -X(0)*x13*x15 - X(1)*x20;
 
 
-    jac(14,15) = (-1.0409203801861816e-115*std::exp((22.915965629999999)*std::log(std::abs(T)))*X(0)*x14 + X(0)*X(12)*((x2) ? (
+    jac(14,15) = (-1.0409203801861816e-115*std::exp((22.915965629999999)*log_abs_T)*X(0)*x14 + X(0)*X(12)*((x2) ? (
    x22
 )
 : (
-   -1875129.1683687614*std::exp((-2.5)*std::log(std::abs(T)))*x4 + x22 + 587469852277.90271*x23*x4 + 54.282214350476039*x23*std::exp(-563932.20901156683*x3)
+   -1875129.1683687614*std::exp((-2.5)*log_abs_T)*x4 + x22 + 587469852277.90271*x23*x4 + 54.282214350476039*x23*std::exp(-563932.20901156683*x3)
 )) - X(0)*x16*(-0.030054336600000002*x10*x3 + 0.001447065312*x11*x3 - 2.9193291280000001e-5*x12*x3 - 21.506460400000002*x3*x6 + 9.1741162500000009*x3*x7 - 2.2740475600000001*x3*x8 + 0.33976956150000004*x3*x9) - X(1)*X(13)*((x19) ? (
-   0.00016065*std::exp((-2.75)*std::log(std::abs(T)))*x18 - 9.4499999999999994e-10*std::exp((-1.75)*std::log(std::abs(T)))*x18
+   0.00016065*std::exp((-2.75)*log_abs_T)*x18 - 9.4499999999999994e-10*std::exp((-1.75)*log_abs_T)*x18
 )
 : (
-   1.8960000000000001e-36*std::exp((3.7400000000000002)*std::log(std::abs(T)))
+   1.8960000000000001e-36*std::exp((3.7400000000000002)*log_abs_T)
 )) + 7.2084342424042629e-17*X(12)*X(2)*x17)/(X(0)*x25 + X(1)*x25 + X(10)*x26 + X(11)*x25 + X(12)*x25 + X(13)*x25 + X(2)*x25 + X(3)*x25 + X(4)*x25 + X(5)*x25 + X(6)*x26 + X(7)*x25 + X(8)*x26 + X(9)*x26);
 
 
@@ -4858,7 +4883,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x4 = 4.0*X(11) + x3;
 
-    x5 = std::sqrt(T);
+    x5 = sqrt_T;
 
     x6 = 2.1299999999999999e-27*x5;
 
@@ -4870,7 +4895,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x10 = X(8)*x9;
 
-    x11 = 3.1438547368704001e-21*std::exp((0.34999999999999998)*std::log(std::abs(T)));
+    x11 = 3.1438547368704001e-21*std::exp((0.34999999999999998)*log_abs_T);
 
     x12 = x10*x11;
 
@@ -4886,12 +4911,12 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
    2.3157944032250755
 )
 : (
-   std::exp((0.36470000000000002)*std::log(std::abs(T)))
+   std::exp((0.36470000000000002)*log_abs_T)
 ));
 
     x18 = X(12)*x17;
 
-    x19 = std::sqrt(T);
+    x19 = sqrt_T;
 
     x20 = ((x16) ? (
    std::sqrt(10)
@@ -4923,7 +4948,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
    5.011872336272722
 )
 : (
-   std::exp((0.69999999999999996)*std::log(std::abs(T)))
+   std::exp((0.69999999999999996)*log_abs_T)
 )) + 1.0;
 
     x29 = 1.0/x28;
@@ -4932,7 +4957,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
    0.63095734448019325
 )
 : (
-   std::exp((-0.20000000000000001)*std::log(std::abs(T)))
+   std::exp((-0.20000000000000001)*log_abs_T)
 ));
 
     x31 = x29*x30;
@@ -4949,7 +4974,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x37 = X(0)*X(12);
 
-    x38 = std::exp((-1.5)*std::log(std::abs(T)));
+    x38 = std::exp((-1.5)*log_abs_T);
 
     x39 = ((x16) ? (
    0.031622776601683791
@@ -4974,7 +4999,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x47 = 1.0/x5;
 
-    x48 = std::exp((-2)*std::log(std::abs(T)));
+    x48 = std::exp((-2)*log_abs_T);
 
     x49 = std::exp(-160000.0*x48);
 
@@ -5000,7 +5025,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
    0.4008667176273028
 )
 : (
-   std::exp((-0.39700000000000002)*std::log(std::abs(T)))
+   std::exp((-0.39700000000000002)*log_abs_T)
 ));
 
     x60 = 5.5399999999999998e-17*x59;
@@ -5011,7 +5036,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
    0.67810976749343443
 )
 : (
-   std::exp((-0.16869999999999999)*std::log(std::abs(T)))
+   std::exp((-0.16869999999999999)*log_abs_T)
 ));
 
     x63 = std::exp(-55338.0*x24);
@@ -5056,7 +5081,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x83 = ((X(2))*(X(2))*(X(2)));
 
-    x84 = std::exp((-0.25)*std::log(std::abs(T)));
+    x84 = std::exp((-0.25)*log_abs_T);
 
     x85 = 2.0000000000000002e-31*x47 + 6.0000000000000001e-32*x84;
 
@@ -5064,9 +5089,9 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x87 = 2.5000000000000002e-32*x47 + 7.5000000000000001e-33*x84;
 
-    x88 = 1.3500000000000001e-9*std::exp((0.098492999999999997)*std::log(std::abs(T))) + 4.4350199999999998e-10*std::exp((0.55610000000000004)*std::log(std::abs(T))) + 3.7408500000000004e-16*std::exp((2.1825999999999999)*std::log(std::abs(T)));
+    x88 = 1.3500000000000001e-9*std::exp((0.098492999999999997)*log_abs_T) + 4.4350199999999998e-10*std::exp((0.55610000000000004)*log_abs_T) + 3.7408500000000004e-16*std::exp((2.1825999999999999)*log_abs_T);
 
-    x89 = 0.0061910000000000003*std::exp((1.0461)*std::log(std::abs(T))) + 8.9711999999999997e-11*std::exp((3.0424000000000002)*std::log(std::abs(T))) + 3.2575999999999999e-14*std::exp((3.7740999999999998)*std::log(std::abs(T))) + 1.0;
+    x89 = 0.0061910000000000003*std::exp((1.0461)*log_abs_T) + 8.9711999999999997e-11*std::exp((3.0424000000000002)*log_abs_T) + 3.2575999999999999e-14*std::exp((3.7740999999999998)*log_abs_T) + 1.0;
 
     x90 = 1.0/x89;
 
@@ -5473,7 +5498,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
    ))
 ));
 
-    x235 = std::exp((25.0*x101)*std::log(std::abs(T)));
+    x235 = std::exp((25.0*x101)*log_abs_T);
 
     x236 = 1.0/x235;
 
@@ -5519,7 +5544,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x257 = x255 && x256;
 
-    x258 = std::exp((16.666666666666664*x101)*std::log(std::abs(T)));
+    x258 = std::exp((16.666666666666664*x101)*log_abs_T);
 
     x259 = 1.0/x258;
 
@@ -5559,7 +5584,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x277 = T <= 6000.0;
 
-    x278 = std::exp((17.997580222853362*x101)*std::log(std::abs(T)));
+    x278 = std::exp((17.997580222853362*x101)*log_abs_T);
 
     x279 = 1.0/x278;
 
@@ -5638,7 +5663,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x302 = std::exp(-510.0*x8);
 
-    x303 = 6.0142468035272636e-8*std::exp((2.1000000000000001)*std::log(std::abs(T))) + 1.0;
+    x303 = 6.0142468035272636e-8*std::exp((2.1000000000000001)*log_abs_T) + 1.0;
 
     x304 = ((T)*(T)*(T));
 
@@ -5648,7 +5673,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 
     x307 = x306/x303;
 
-    x308 = 4.985670872372847e-33*std::exp((3.7599999999999998)*std::log(std::abs(T)))*x307 + 1.6e-18*x300 + 6.7e-19*x301 + 3.0e-24*x302;
+    x308 = 4.985670872372847e-33*std::exp((3.7599999999999998)*log_abs_T)*x307 + 1.6e-18*x300 + 6.7e-19*x301 + 3.0e-24*x302;
 
     x309 = T < 2000.0;
 
@@ -6552,10 +6577,10 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
    0
 )
 : (
-   -0.20000000000000001*std::exp((-1.2)*std::log(std::abs(T)))
+   -0.20000000000000001*std::exp((-1.2)*log_abs_T)
 ));
 
-    x488 = std::exp((-2.5)*std::log(std::abs(T)));
+    x488 = std::exp((-2.5)*log_abs_T);
 
     x489 = x482*x57;
 
@@ -6571,17 +6596,17 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
    0
 )
 : (
-   -0.16869999999999999*std::exp((-1.1687000000000001)*std::log(std::abs(T)))
+   -0.16869999999999999*std::exp((-1.1687000000000001)*log_abs_T)
 ));
 
     x495 = x30*x486*((x16) ? (
    0
 )
 : (
-   0.69999999999999996*std::exp((-0.30000000000000004)*std::log(std::abs(T)))
+   0.69999999999999996*std::exp((-0.30000000000000004)*log_abs_T)
 ))/((x28)*(x28));
 
-    x496 = std::exp((-1.25)*std::log(std::abs(T)));
+    x496 = std::exp((-1.25)*log_abs_T);
 
     x497 = x37*x491;
 
@@ -6660,7 +6685,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
     x529 = x246*x514;
 
     x530 = ((x309) ? (
-   3.2860556719809434e-26*std::exp((-0.24000000000000021)*std::log(std::abs(T)))*x307 + 1.8746122480121903e-32*std::exp((2.7599999999999998)*std::log(std::abs(T)))*x307 - 6.2968615725975507e-40*std::exp((4.8599999999999994)*std::log(std::abs(T)))*x306/((x303)*(x303)) + 1.8719999999999998e-14*x300*x48 + 3.9261999999999998e-15*x301*x48 + 1.53e-21*x302*x48
+   3.2860556719809434e-26*std::exp((-0.24000000000000021)*log_abs_T)*x307 + 1.8746122480121903e-32*std::exp((2.7599999999999998)*log_abs_T)*x307 - 6.2968615725975507e-40*std::exp((4.8599999999999994)*log_abs_T)*x306/((x303)*(x303)) + 1.8719999999999998e-14*x300*x48 + 3.9261999999999998e-15*x301*x48 + 1.53e-21*x302*x48
 )
 : ((x255) ? (
    x310*(11.55760367482214*x512 - 7.2479875549080308*x523 + 33.455408266588918*x524 - 35.698903039375494*x525 - 54.526167351293466*x526 + 62.988078688261993*x527 + 22.762583481781927*x528 - 32.574051224421225*x529)
@@ -6951,11 +6976,11 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
 )));
 
 
-    jac(15,15) = x95*(-3.2067318316078082e-16*std::exp((-1.6499999999999999)*std::log(std::abs(T)))*x477 - 1.10034915790464e-21*std::exp((-0.65000000000000002)*std::log(std::abs(T)))*x477 - X(0)*x14 - 1.0649999999999999e-27*X(0)*x4*x47 + 2.185341195413336e-30*X(1)*x495 + 8.741364781653344e-30*X(11)*x495 + 3.12599925e-16*X(12)*x500*x72 + X(2)*X(3)*x439*x88*(-0.0064764051000000007*std::exp((0.04610000000000003)*std::log(std::abs(T))) - 2.7293978880000002e-10*std::exp((2.0424000000000002)*std::log(std::abs(T))) - 1.229450816e-13*std::exp((2.7740999999999998)*std::log(std::abs(T))))/((x89)*(x89)) + X(3)*x447*(1.3296555000000001e-10*std::exp((-0.90150700000000006)*std::log(std::abs(T))) + 2.466314622e-10*std::exp((-0.44389999999999996)*std::log(std::abs(T))) + 8.1647792100000001e-16*std::exp((1.1825999999999999)*std::log(std::abs(T)))) - x118*(69500.0*x106*x48 - x445*x505) - x118*(x409*x505 + 12307692.307692308*x114*x5*(0.0042250000000000005*x109*x111*x488 - 4.0625000000000001e-8*x112*x38 - 0.00048750000000000003*x488*std::exp(-58000.0*x8))*std::exp(x110)/x109) + 1.5653274417833479e-24*x20*x497*x72 - 0.00090725967999999999*x218*x225*x304*x94 - 1.2700000000000001e-21*x23*x483*x79 + 2.62395452e-11*x366*x478*x59 - 5.5399999999999998e-17*x366*x58*((x16) ? (
+    jac(15,15) = x95*(-3.2067318316078082e-16*std::exp((-1.6499999999999999)*log_abs_T)*x477 - 1.10034915790464e-21*std::exp((-0.65000000000000002)*log_abs_T)*x477 - X(0)*x14 - 1.0649999999999999e-27*X(0)*x4*x47 + 2.185341195413336e-30*X(1)*x495 + 8.741364781653344e-30*X(11)*x495 + 3.12599925e-16*X(12)*x500*x72 + X(2)*X(3)*x439*x88*(-0.0064764051000000007*std::exp((0.04610000000000003)*log_abs_T) - 2.7293978880000002e-10*std::exp((2.0424000000000002)*log_abs_T) - 1.229450816e-13*std::exp((2.7740999999999998)*log_abs_T))/((x89)*(x89)) + X(3)*x447*(1.3296555000000001e-10*std::exp((-0.90150700000000006)*log_abs_T) + 2.466314622e-10*std::exp((-0.44389999999999996)*log_abs_T) + 8.1647792100000001e-16*std::exp((1.1825999999999999)*log_abs_T)) - x118*(69500.0*x106*x48 - x445*x505) - x118*(x409*x505 + 12307692.307692308*x114*x5*(0.0042250000000000005*x109*x111*x488 - 4.0625000000000001e-8*x112*x38 - 0.00048750000000000003*x488*std::exp(-58000.0*x8))*std::exp(x110)/x109) + 1.5653274417833479e-24*x20*x497*x72 - 0.00090725967999999999*x218*x225*x304*x94 - 1.2700000000000001e-21*x23*x483*x79 + 2.62395452e-11*x366*x478*x59 - 5.5399999999999998e-17*x366*x58*((x16) ? (
    0
 )
 : (
-   -0.39700000000000002*std::exp((-1.397)*std::log(std::abs(T)))
+   -0.39700000000000002*std::exp((-1.397)*log_abs_T)
 )) - x37*x42*((x16) ? (
    0
 )
@@ -6965,7 +6990,7 @@ INTEGRATORS_HOST_DEVICE void jac_nuc(const burn_t& state,
    0
 )
 : (
-   0.36470000000000002*std::exp((-0.63529999999999998)*std::log(std::abs(T)))
+   0.36470000000000002*std::exp((-0.63529999999999998)*log_abs_T)
 )) - x379*((x216) ? (
    0
 )
@@ -7000,10 +7025,7 @@ INTEGRATORS_HOST_DEVICE void actual_jac(const burn_t& state, MatrixType& jac)
 {
     Real z = redshift();
 
-    Array1D<Real, 0, NumSpec-1> X;
-    for (int i = 0; i < NumSpec; ++i) {
-        X(i) = state.xn[i];
-    }
+    const Array1DConstView<Real, 0, NumSpec-1> X{state.xn.data()};
     // Species Jacobian elements with respect to other species
 
     jac_nuc(state, jac, X, z);
@@ -7016,6 +7038,14 @@ struct JacobianAdapter {
 
     INTEGRATORS_HOST_DEVICE Real& operator()(int row, int col) {
         return jac[static_cast<std::size_t>(row - 1)][static_cast<std::size_t>(col - 1)];
+    }
+};
+
+struct RhsAdapter {
+    std::array<Real, neqs>& rhs;
+
+    INTEGRATORS_HOST_DEVICE Real& operator()(int equation) {
+        return rhs[static_cast<std::size_t>(equation - 1)];
     }
 };
 
@@ -7037,25 +7067,18 @@ struct PrimordialChem {
         return state;
     }
 
-    INTEGRATORS_HOST_DEVICE static void rhs([[maybe_unused]] Real t, const state_type& y, rhs_type& dydt) {
+    INTEGRATORS_HOST_DEVICE_NOINLINE static void rhs(
+        [[maybe_unused]] Real t, const state_type& y, rhs_type& dydt) {
         burn_t state = burn_state_from_y(y);
-
-        Array1D<Real, 1, primordial_chem::neqs> ydot;
-        actual_rhs(state, ydot);
-
-        for (int n = 0; n < NumSpec; ++n) {
-            dydt[static_cast<std::size_t>(n)] = ydot(n + 1);
-        }
-        dydt[NumSpec] = ydot(net_ienuc);
+        RhsAdapter adapter{dydt};
+        actual_rhs(state, adapter);
     }
 
-    INTEGRATORS_HOST_DEVICE static void jacobian([[maybe_unused]] Real t, const state_type& y, jacobian_type& jac) {
-        for (auto& row : jac) {
-            row.fill(0.0);
-        }
-
+    INTEGRATORS_HOST_DEVICE static void jacobian(
+        [[maybe_unused]] Real t, const state_type& y, jacobian_type& jac) {
         burn_t state = burn_state_from_y(y);
         JacobianAdapter adapter{jac};
+        // The generated Jacobian assigns all neqs * neqs entries exactly once.
         actual_jac(state, adapter);
     }
 };
@@ -7079,10 +7102,10 @@ struct RODASState {
     Real t{0.0};
     Real tout{0.0};
     Real dt{0.0};
-    std::array<Real, N> y{};
+    std::array<Real, N> y;
 
-    std::array<Real, N> rtol_vec{};
-    std::array<Real, N> atol_vec{};
+    std::array<Real, N> rtol_vec;
+    std::array<Real, N> atol_vec;
 
     int n_step{0};
     int n_rhs{0};
@@ -7098,14 +7121,15 @@ struct RODASState {
     Real fac_max{6.0};
     Real safe{0.9};
 
-    std::array<Real, N> ynew{};
-    std::array<Real, N> ak1{};
-    std::array<Real, N> ak2{};
-    std::array<Real, N> work{};
-    std::array<std::array<Real, N>, N> fjac{};
-    std::array<std::array<Real, N>, N> e{};
-    std::array<Real, N> dy{};
-    std::array<int, N> ip{};
+    std::array<Real, N> ynew;
+    std::array<Real, N> ak1;
+    std::array<Real, N> ak2;
+    std::array<Real, N> work;
+    std::array<std::array<Real, N>, N> fjac;
+    std::array<std::array<Real, N>, N> e;
+    std::array<Real, N> dy;
+    std::array<Real, N> rhs0;
+    std::array<int, N> ip;
 };
 
 namespace detail {
@@ -7256,6 +7280,8 @@ public:
             }
 
             eval_jacobian(s, x);
+            rhs(x, s.y, s.rhs0);
+            record_rhs(s);
 
             for (;;) {
                 const Real fac = 1.0 / (h * C::gamma);
@@ -7272,7 +7298,7 @@ public:
                     continue;
                 }
 
-                rhs(x, s.y, s.ak1);
+                s.ak1 = s.rhs0;
                 solve(s, s.ak1);
 
                 for (size_type i = 0; i < N; ++i) {
@@ -7300,7 +7326,7 @@ public:
                     s.ynew[i] = s.y[i] + C::b1 * s.ak1[i] + C::b2 * s.ak2[i] + C::b3 * ak3i;
                     s.work[i] = C::e1 * s.ak1[i] + C::e2 * s.ak2[i] + C::e3 * ak3i;
                 }
-                record_rhs(s, 3);
+                record_rhs(s, 2);
                 n_step += 1;
                 record_step(s, n_step);
 
@@ -7776,7 +7802,21 @@ __global__ void advance_collapse_gridwide_kernel(
         pc::eos_re(state.current);
         state.time = next_grid_time;
         state.completed_steps = completed_global_steps + 1;
+#if defined(__CUDA_ARCH__)
+        const unsigned int active_lanes = __activemask();
+        const int leader_lane = __ffs(active_lanes) - 1;
+        if ((threadIdx.x & (warpSize - 1)) == leader_lane) {
+            atomicAdd(integrated_count, __popc(active_lanes));
+        }
+#elif defined(__HIP_DEVICE_COMPILE__)
+        const unsigned long long active_lanes = __ballot(1);
+        const int leader_lane = __ffsll(active_lanes) - 1;
+        if ((threadIdx.x & (warpSize - 1)) == leader_lane) {
+            atomicAdd(integrated_count, __popcll(active_lanes));
+        }
+#else
         atomicAdd(integrated_count, 1);
+#endif
     }
     if (failure != integrators::IntegratorResult::SUCCESS) {
         atomicCAS(failure_code, static_cast<int>(integrators::IntegratorResult::SUCCESS),
